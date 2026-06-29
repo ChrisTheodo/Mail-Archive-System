@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MailArchive.API", "MailArchive.API\MailArchive.API.csproj", "{3052BEF1-5E5A-4ADA-AA54-476CEC8D25B4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MailArchive.Domain", "MailArchive.Domain\MailArchive.Domain.csproj", "{C19A94A0-8775-45C3-86E3-009172F632C5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MailArchive.Application", "MailArchive.Application\MailArchive.Application.csproj", "{C95FF6FA-7598-4606-B1C2-82F678048099}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MailArchive.Persistence", "MailArchive.Persistence\MailArchive.Persistence.csproj", "{67E0F063-C549-4B79-8685-5C0C42AF5658}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{3052BEF1-5E5A-4ADA-AA54-476CEC8D25B4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3052BEF1-5E5A-4ADA-AA54-476CEC8D25B4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3052BEF1-5E5A-4ADA-AA54-476CEC8D25B4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3052BEF1-5E5A-4ADA-AA54-476CEC8D25B4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C19A94A0-8775-45C3-86E3-009172F632C5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C19A94A0-8775-45C3-86E3-009172F632C5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C19A94A0-8775-45C3-86E3-009172F632C5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C19A94A0-8775-45C3-86E3-009172F632C5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C95FF6FA-7598-4606-B1C2-82F678048099}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C95FF6FA-7598-4606-B1C2-82F678048099}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C95FF6FA-7598-4606-B1C2-82F678048099}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C95FF6FA-7598-4606-B1C2-82F678048099}.Release|Any CPU.Build.0 = Release|Any CPU
+		{67E0F063-C549-4B79-8685-5C0C42AF5658}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{67E0F063-C549-4B79-8685-5C0C42AF5658}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{67E0F063-C549-4B79-8685-5C0C42AF5658}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{67E0F063-C549-4B79-8685-5C0C42AF5658}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

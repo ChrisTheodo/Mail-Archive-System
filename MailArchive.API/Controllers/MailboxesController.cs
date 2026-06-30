@@ -1,9 +1,8 @@
 using MailArchive.Application.Contracts.Mailboxes;
-using MailArchive.Application.Contracts;
-using MailArchive.Domain.Entities;
-using MailArchive.Persistence;
+using MailArchive.Application.Mailboxes;
+using MailArchive.Application.Mailboxes.Queries;
+using MailArchive.Application.Common;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace MailArchive.API.Controllers;
 
@@ -11,63 +10,92 @@ namespace MailArchive.API.Controllers;
 [Route("api/mailboxes")]
 public class MailboxesController : ControllerBase
 {
-    private readonly MailArchiveDbContext _db;
+    private readonly IMailboxService _service;
 
-    public MailboxesController(MailArchiveDbContext db)
+    public MailboxesController(IMailboxService service)
     {
-        _db = db;
+        _service = service;
     }
 
+    // GET: api/mailboxes?page=1&pageSize=20&search=abc
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] MailboxQueryParameters query)
     {
-        var mailboxes = await _db.Mailboxes
-            .Include(m => m.OwnerUser)
-            .ToListAsync();
+        var result = await _service.GetPagedAsync(query);
 
-        return Ok(mailboxes);
+        var mapped = new PagedResult<MailboxResponse>
+        {
+            Items = result.Items.Select(x => new MailboxResponse(
+                x.Id,
+                x.DisplayName,
+                x.OwnerUserId,
+                x.OwnerUser?.Email
+            )).ToList(),
+            TotalCount = result.TotalCount,
+            Page = result.Page,
+            PageSize = result.PageSize
+        };
+
+        return Ok(ApiResponse<PagedResult<MailboxResponse>>.Ok(mapped));
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var mailbox = await _db.Mailboxes
-            .Include(m => m.OwnerUser)
-            .FirstOrDefaultAsync(m => m.Id == id);
+        var result = await _service.GetByIdAsync(id);
 
-        if (mailbox == null) return NotFound();
-        return Ok(mailbox);
+        if (!result.IsSuccess)
+            return NotFound(ApiResponse<MailboxResponse>.Fail(result.Error!));
+
+        var x = result.Value!;
+
+        var response = new MailboxResponse(
+            x.Id,
+            x.DisplayName,
+            x.OwnerUserId,
+            x.OwnerUser?.Email
+        );
+
+        return Ok(ApiResponse<MailboxResponse>.Ok(response));
     }
 
     [HttpPost]
     public async Task<IActionResult> Create(CreateMailboxRequest request)
     {
-        var user = await _db.Users.FindAsync(request.OwnerUserId);
-        if (user == null) return BadRequest("User not found");
+        var result = await _service.CreateAsync(request);
 
-        var mailbox = new Mailbox
-        {
-            Id = Guid.NewGuid(),
-            OwnerUserId = request.OwnerUserId,
-            DisplayName = request.DisplayName,
-            CreatedAt = DateTime.UtcNow
-        };
+        if (!result.IsSuccess)
+            return BadRequest(ApiResponse<string>.Fail(result.Error!));
 
-        _db.Mailboxes.Add(mailbox);
-        await _db.SaveChangesAsync();
+        var x = result.Value!;
 
-        return Ok(mailbox);
+        var response = new MailboxResponse(
+            x.Id,
+            x.DisplayName,
+            x.OwnerUserId,
+            x.OwnerUser?.Email
+        );
+
+        return Ok(ApiResponse<MailboxResponse>.Ok(response));
     }
 
-    [HttpPut("{id}")]
+    [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, UpdateMailboxRequest request)
     {
-        var mailbox = await _db.Mailboxes.FindAsync(id);
-        if (mailbox == null) return NotFound();
+        var result = await _service.UpdateAsync(id, request);
 
-        mailbox.DisplayName = request.DisplayName;
+        if (!result.IsSuccess)
+            return NotFound(ApiResponse<string>.Fail(result.Error!));
 
-        await _db.SaveChangesAsync();
-        return Ok(mailbox);
+        var x = result.Value!;
+
+        var response = new MailboxResponse(
+            x.Id,
+            x.DisplayName,
+            x.OwnerUserId,
+            x.OwnerUser?.Email
+        );
+
+        return Ok(ApiResponse<MailboxResponse>.Ok(response));
     }
 }

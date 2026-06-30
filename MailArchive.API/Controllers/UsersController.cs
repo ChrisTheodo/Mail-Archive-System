@@ -1,9 +1,6 @@
-using MailArchive.Application.Contracts;
 using MailArchive.Application.Contracts.Users;
-using MailArchive.Domain.Entities;
-using MailArchive.Persistence;
+using MailArchive.Application.Users;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace MailArchive.API.Controllers;
 
@@ -11,24 +8,24 @@ namespace MailArchive.API.Controllers;
 [Route("api/users")]
 public class UsersController : ControllerBase
 {
-    private readonly MailArchiveDbContext _db;
+    private readonly IUserService _service;
 
-    public UsersController(MailArchiveDbContext db)
+    public UsersController(IUserService service)
     {
-        _db = db;
+        _service = service;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var users = await _db.Users.ToListAsync();
+        var users = await _service.GetAllAsync();
         return Ok(users);
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var user = await _db.Users.FindAsync(id);
+        var user = await _service.GetByIdAsync(id);
         if (user == null) return NotFound();
         return Ok(user);
     }
@@ -36,32 +33,16 @@ public class UsersController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(CreateUserRequest request)
     {
-        var user = new User
-        {
-            Id = Guid.NewGuid(),
-            Email = request.Email,
-            DisplayName = request.DisplayName,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _db.Users.Add(user);
-        await _db.SaveChangesAsync();
-
+        var user = await _service.CreateAsync(request);
         return Ok(user);
     }
 
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, UpdateUserRequest request)
     {
-        var user = await _db.Users.FindAsync(id);
+        var user = await _service.UpdateAsync(id, request);
         if (user == null) return NotFound();
 
-        user.DisplayName = request.DisplayName;
-        user.IsActive = request.IsActive;
-        user.UpdatedAt = DateTime.UtcNow;
-
-        await _db.SaveChangesAsync();
         return Ok(user);
     }
 }

@@ -48,4 +48,11 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+app.MapGet("/health", () => "OK");
+
+app.MapGet("/health/db", async (MailArchiveDbContext db) =>
+{
+    return await db.Users.CountAsync();
+});
+
 app.Run();

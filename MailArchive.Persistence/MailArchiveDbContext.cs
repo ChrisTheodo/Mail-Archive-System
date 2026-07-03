@@ -28,42 +28,6 @@ public class MailArchiveDbContext : DbContext, IMailArchiveDbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<User>()
-            .HasMany(u => u.Mailboxes)
-            .WithOne(m => m.OwnerUser)
-            .HasForeignKey(m => m.OwnerUserId);
-
-        modelBuilder.Entity<Mailbox>()
-            .HasMany(m => m.Emails)
-            .WithOne(e => e.Mailbox)
-            .HasForeignKey(e => e.MailboxId);
-
-        modelBuilder.Entity<ImportBatch>()
-            .HasMany(b => b.Emails)
-            .WithOne(e => e.ImportBatch)
-            .HasForeignKey(e => e.ImportBatchId);
-
-        modelBuilder.Entity<Email>()
-            .HasMany(e => e.Attachments)
-            .WithOne(a => a.Email)
-            .HasForeignKey(a => a.EmailId);
-
-        modelBuilder.Entity<Email>()
-            .HasMany(e => e.Recipients)
-            .WithOne(r => r.Email)
-            .HasForeignKey(r => r.EmailId);
-
-        modelBuilder.Entity<AuditLog>()
-            .HasOne(a => a.User)
-            .WithMany()
-            .HasForeignKey(a => a.UserId);
-
-        modelBuilder.Entity<Email>().HasIndex(e => e.MailboxId);
-        modelBuilder.Entity<Email>().HasIndex(e => e.SenderEmail);
-        modelBuilder.Entity<Email>().HasIndex(e => e.ReceivedAt);
-        modelBuilder.Entity<Email>().HasIndex(e => e.InternetMessageId);
-
-        modelBuilder.Entity<EmailRecipient>().HasIndex(r => r.RecipientEmail);
-        modelBuilder.Entity<Attachment>().HasIndex(a => a.FileName);
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(MailArchiveDbContext).Assembly);
     }
 }

@@ -20,6 +20,7 @@ public class MailboxService : IMailboxService
     {
         var mailboxes = await _db.Mailboxes
             .Include(x => x.OwnerUser)
+            .OrderBy(x => x.DisplayName)
             .ToListAsync();
 
         return Result<List<Mailbox>>.Success(mailboxes);
@@ -48,10 +49,12 @@ public class MailboxService : IMailboxService
         if (!user.IsActive)
             return Result<Mailbox>.Failure("UserInactive");
 
+        var displayName = request.DisplayName.Trim();
+
         var exists = await _db.Mailboxes
             .AnyAsync(x =>
                 x.OwnerUserId == request.OwnerUserId &&
-                x.DisplayName == request.DisplayName);
+                x.DisplayName.ToLower() == displayName.ToLower());
 
         if (exists)
             return Result<Mailbox>.Failure("MailboxAlreadyExists");
@@ -60,7 +63,7 @@ public class MailboxService : IMailboxService
         {
             Id = Guid.NewGuid(),
             OwnerUserId = request.OwnerUserId,
-            DisplayName = request.DisplayName,
+            DisplayName = displayName,
             CreatedAt = DateTime.UtcNow,
             IsAssigned = true
         };
@@ -79,47 +82,57 @@ public class MailboxService : IMailboxService
         if (mailbox == null)
             return Result<Mailbox>.Failure("MailboxNotFound");
 
+        var displayName = request.DisplayName.Trim();
+
         var exists = await _db.Mailboxes
             .AnyAsync(x =>
                 x.OwnerUserId == mailbox.OwnerUserId &&
-                x.DisplayName == request.DisplayName &&
+                x.DisplayName.ToLower() == displayName.ToLower() &&
                 x.Id != id);
 
         if (exists)
             return Result<Mailbox>.Failure("MailboxAlreadyExists");
 
-        mailbox.DisplayName = request.DisplayName;
+        mailbox.DisplayName = displayName;
 
         await _db.SaveChangesAsync();
 
         return Result<Mailbox>.Success(mailbox);
     }
-    
+
     public async Task<PagedResult<Mailbox>> GetPagedAsync(MailboxQueryParameters query)
     {
+        var page = query.Page < 1 ? 1 : query.Page;
+        var pageSize = query.PageSize < 1 ? 20 : query.PageSize;
+        pageSize = pageSize > 100 ? 100 : pageSize;
+
         var baseQuery = _db.Mailboxes
             .Include(x => x.OwnerUser)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
+            var search = query.Search.Trim().ToLowerInvariant();
+
             baseQuery = baseQuery.Where(x =>
-                x.DisplayName.Contains(query.Search));
+                x.DisplayName.ToLower().Contains(search) ||
+                x.OwnerUser.Email.ToLower().Contains(search));
         }
 
         var total = await baseQuery.CountAsync();
 
         var items = await baseQuery
-            .Skip((query.Page - 1) * query.PageSize)
-            .Take(query.PageSize)
+            .OrderBy(x => x.DisplayName)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync();
 
         return new PagedResult<Mailbox>
         {
             Items = items,
             TotalCount = total,
-            Page = query.Page,
-            PageSize = query.PageSize
+            Page = page,
+            PageSize = pageSize
         };
     }
 }

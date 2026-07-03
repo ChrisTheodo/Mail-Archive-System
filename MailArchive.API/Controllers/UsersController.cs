@@ -1,5 +1,7 @@
+using MailArchive.Application.Common;
 using MailArchive.Application.Contracts.Users;
 using MailArchive.Application.Users;
+using MailArchive.Application.Users.Queries;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MailArchive.API.Controllers;
@@ -15,34 +17,85 @@ public class UsersController : ControllerBase
         _service = service;
     }
 
+    // GET: api/users?page=1&pageSize=20&search=abc
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] UserQueryParameters query)
     {
-        var users = await _service.GetAllAsync();
-        return Ok(users);
+        var result = await _service.GetPagedAsync(query);
+
+        var mapped = new PagedResult<UserResponse>
+        {
+            Items = result.Items.Select(x => new UserResponse(
+                x.Id,
+                x.Email,
+                x.DisplayName,
+                x.IsActive
+            )).ToList(),
+            TotalCount = result.TotalCount,
+            Page = result.Page,
+            PageSize = result.PageSize
+        };
+
+        return Ok(ApiResponse<PagedResult<UserResponse>>.Ok(mapped));
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var user = await _service.GetByIdAsync(id);
-        if (user == null) return NotFound();
-        return Ok(user);
+        var result = await _service.GetByIdAsync(id);
+
+        if (!result.IsSuccess)
+            return NotFound(ApiResponse<UserResponse>.Fail(result.Error!));
+
+        var x = result.Value!;
+
+        var response = new UserResponse(
+            x.Id,
+            x.Email,
+            x.DisplayName,
+            x.IsActive
+        );
+
+        return Ok(ApiResponse<UserResponse>.Ok(response));
     }
 
     [HttpPost]
     public async Task<IActionResult> Create(CreateUserRequest request)
     {
-        var user = await _service.CreateAsync(request);
-        return Ok(user);
+        var result = await _service.CreateAsync(request);
+
+        if (!result.IsSuccess)
+            return BadRequest(ApiResponse<string>.Fail(result.Error!));
+
+        var x = result.Value!;
+
+        var response = new UserResponse(
+            x.Id,
+            x.Email,
+            x.DisplayName,
+            x.IsActive
+        );
+
+        return Ok(ApiResponse<UserResponse>.Ok(response));
     }
 
-    [HttpPut("{id}")]
+    [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, UpdateUserRequest request)
     {
-        var user = await _service.UpdateAsync(id, request);
-        if (user == null) return NotFound();
+        var result = await _service.UpdateAsync(id, request);
 
-        return Ok(user);
+        if (!result.IsSuccess)
+            return NotFound(ApiResponse<string>.Fail(result.Error!));
+
+        var x = result.Value!;
+
+        var response = new UserResponse(
+            x.Id,
+            x.Email,
+            x.DisplayName,
+            x.IsActive
+        );
+
+        return Ok(ApiResponse<UserResponse>.Ok(response));
     }
 }

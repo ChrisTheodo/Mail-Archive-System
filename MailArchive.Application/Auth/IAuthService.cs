@@ -1,0 +1,9 @@
+using MailArchive.Application.Common;
+using MailArchive.Application.Contracts.Auth;
+
+namespace MailArchive.Application.Auth;
+
+public interface IAuthService
+{
+    Task<Result<LoginResponse>> LoginAsync(LoginRequest request);
+}

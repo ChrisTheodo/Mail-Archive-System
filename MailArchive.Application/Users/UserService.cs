@@ -1,5 +1,7 @@
 using MailArchive.Application.Abstractions;
+using MailArchive.Application.Common;
 using MailArchive.Application.Contracts.Users;
+using MailArchive.Application.Users.Queries;
 using MailArchive.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,31 +16,67 @@ public class UserService : IUserService
         _db = db;
     }
 
-    public async Task<List<User>> GetAllAsync()
+    public async Task<PagedResult<User>> GetPagedAsync(UserQueryParameters query)
     {
-        return await _db.Users.ToListAsync();
+        var page = query.Page < 1 ? 1 : query.Page;
+        var pageSize = query.PageSize < 1 ? 20 : query.PageSize;
+        pageSize = pageSize > 100 ? 100 : pageSize;
+
+        var baseQuery = _db.Users.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var search = query.Search.Trim().ToLowerInvariant();
+
+            baseQuery = baseQuery.Where(x =>
+                x.Email.ToLower().Contains(search) ||
+                x.DisplayName.ToLower().Contains(search));
+        }
+
+        var total = await baseQuery.CountAsync();
+
+        var users = await baseQuery
+            .OrderBy(x => x.Email)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new PagedResult<User>
+        {
+            Items = users,
+            TotalCount = total,
+            Page = page,
+            PageSize = pageSize
+        };
     }
 
-    public async Task<User?> GetByIdAsync(Guid id)
+    public async Task<Result<User>> GetByIdAsync(Guid id)
     {
-        return await _db.Users.FirstOrDefaultAsync(x => x.Id == id);
+        var user = await _db.Users
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (user == null)
+            return Result<User>.Failure("UserNotFound");
+
+        return Result<User>.Success(user);
     }
 
-    public async Task<User> CreateAsync(CreateUserRequest request)
+    public async Task<Result<User>> CreateAsync(CreateUserRequest request)
     {
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var displayName = request.DisplayName.Trim();
+
         var emailExists = await _db.Users
-            .AnyAsync(x => x.Email == request.Email);
+            .AnyAsync(x => x.Email.ToLower() == normalizedEmail);
 
         if (emailExists)
-        {
-            throw new InvalidOperationException("Email already exists");
-        }
+            return Result<User>.Failure("UserAlreadyExists");
 
         var user = new User
         {
             Id = Guid.NewGuid(),
-            Email = request.Email,
-            DisplayName = request.DisplayName,
+            Email = normalizedEmail,
+            DisplayName = displayName,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -46,19 +84,23 @@ public class UserService : IUserService
         _db.Users.Add(user);
         await _db.SaveChangesAsync();
 
-        return user;
+        return Result<User>.Success(user);
     }
 
-    public async Task<User?> UpdateAsync(Guid id, UpdateUserRequest request)
+    public async Task<Result<User>> UpdateAsync(Guid id, UpdateUserRequest request)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == id);
-        if (user == null) return null;
+        var user = await _db.Users
+            .FirstOrDefaultAsync(x => x.Id == id);
 
-        user.DisplayName = request.DisplayName;
+        if (user == null)
+            return Result<User>.Failure("UserNotFound");
+
+        user.DisplayName = request.DisplayName.Trim();
         user.IsActive = request.IsActive;
         user.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
-        return user;
+
+        return Result<User>.Success(user);
     }
 }

@@ -1,4 +1,5 @@
 using MailArchive.Application.Abstractions;
+using MailArchive.Application.Audit;
 using MailArchive.Application.Common;
 using MailArchive.Application.Contracts.Auth;
 using MailArchive.Application.Contracts.Users;
@@ -11,15 +12,18 @@ public class AuthService : IAuthService
     private readonly IMailArchiveDbContext _db;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
+    private readonly IAuditLogService _auditLogService;
 
     public AuthService(
         IMailArchiveDbContext db,
         IPasswordHasher passwordHasher,
-        IJwtTokenGenerator jwtTokenGenerator)
+        IJwtTokenGenerator jwtTokenGenerator,
+        IAuditLogService auditLogService)
     {
         _db = db;
         _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
+        _auditLogService = auditLogService;
     }
 
     public async Task<Result<LoginResponse>> LoginAsync(LoginRequest request)
@@ -30,20 +34,56 @@ public class AuthService : IAuthService
             .FirstOrDefaultAsync(x => x.Email == email);
 
         if (user == null)
+        {
+            await _auditLogService.LogAsync(
+                action: "LoginFailed",
+                entityType: "Auth");
+
             return Result<LoginResponse>.Failure("InvalidCredentials");
+        }
 
         if (!user.IsActive)
+        {
+            await _auditLogService.LogAsync(
+                action: "LoginFailedInactiveUser",
+                entityType: "User",
+                entityId: user.Id,
+                userIdOverride: user.Id);
+
             return Result<LoginResponse>.Failure("UserInactive");
+        }
 
         if (string.IsNullOrWhiteSpace(user.PasswordHash))
+        {
+            await _auditLogService.LogAsync(
+                action: "LoginFailedPasswordNotConfigured",
+                entityType: "User",
+                entityId: user.Id,
+                userIdOverride: user.Id);
+
             return Result<LoginResponse>.Failure("PasswordNotConfigured");
+        }
 
         var passwordValid = _passwordHasher.Verify(request.Password, user.PasswordHash);
 
         if (!passwordValid)
+        {
+            await _auditLogService.LogAsync(
+                action: "LoginFailed",
+                entityType: "User",
+                entityId: user.Id,
+                userIdOverride: user.Id);
+
             return Result<LoginResponse>.Failure("InvalidCredentials");
+        }
 
         var token = _jwtTokenGenerator.GenerateToken(user);
+
+        await _auditLogService.LogAsync(
+            action: "LoginSucceeded",
+            entityType: "User",
+            entityId: user.Id,
+            userIdOverride: user.Id);
 
         var response = new LoginResponse(
             token.AccessToken,

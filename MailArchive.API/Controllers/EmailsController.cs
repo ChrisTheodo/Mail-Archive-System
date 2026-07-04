@@ -1,3 +1,4 @@
+using MailArchive.Application.Audit;
 using MailArchive.Application.Common;
 using MailArchive.Application.Contracts.Emails;
 using MailArchive.Application.Emails;
@@ -14,10 +15,14 @@ namespace MailArchive.API.Controllers;
 public class EmailsController : ControllerBase
 {
     private readonly IEmailService _service;
+    private readonly IAuditLogService _auditLogService;
 
-    public EmailsController(IEmailService service)
+    public EmailsController(
+        IEmailService service,
+        IAuditLogService auditLogService)
     {
         _service = service;
+        _auditLogService = auditLogService;
     }
 
     // GET: api/emails?page=1&pageSize=20&search=invoice
@@ -25,6 +30,10 @@ public class EmailsController : ControllerBase
     public async Task<IActionResult> GetAll([FromQuery] EmailQueryParameters query)
     {
         var result = await _service.GetPagedAsync(query);
+
+        await _auditLogService.LogAsync(
+            action: "EmailSearch",
+            entityType: "Email");
 
         var mapped = new PagedResult<EmailListResponse>
         {
@@ -45,6 +54,11 @@ public class EmailsController : ControllerBase
         if (!result.IsSuccess)
             return NotFound(ApiResponse<EmailDetailsResponse>.Fail(result.Error!));
 
+        await _auditLogService.LogAsync(
+            action: "EmailViewed",
+            entityType: "Email",
+            entityId: id);
+
         var response = MapToDetailsResponse(result.Value!);
 
         return Ok(ApiResponse<EmailDetailsResponse>.Ok(response));
@@ -57,6 +71,11 @@ public class EmailsController : ControllerBase
 
         if (!result.IsSuccess)
             return NotFound(ApiResponse<IReadOnlyCollection<EmailAttachmentResponse>>.Fail(result.Error!));
+
+        await _auditLogService.LogAsync(
+            action: "EmailAttachmentsViewed",
+            entityType: "Email",
+            entityId: id);
 
         var response = result.Value!
             .Select(MapToAttachmentResponse)

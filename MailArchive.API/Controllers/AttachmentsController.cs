@@ -1,4 +1,5 @@
 using MailArchive.Application.Attachments;
+using MailArchive.Application.Audit;
 using MailArchive.Application.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,13 +12,16 @@ namespace MailArchive.API.Controllers;
 public class AttachmentsController : ControllerBase
 {
     private readonly IAttachmentService _service;
+    private readonly IAuditLogService _auditLogService;
     private readonly IWebHostEnvironment _environment;
 
     public AttachmentsController(
         IAttachmentService service,
+        IAuditLogService auditLogService,
         IWebHostEnvironment environment)
     {
         _service = service;
+        _auditLogService = auditLogService;
         _environment = environment;
     }
 
@@ -38,6 +42,11 @@ public class AttachmentsController : ControllerBase
 
         if (!System.IO.File.Exists(filePath))
             return NotFound(ApiResponse<string>.Fail("AttachmentFileNotFound"));
+
+        await _auditLogService.LogAsync(
+            action: "AttachmentDownloaded",
+            entityType: "Attachment",
+            entityId: id);
 
         var contentType = string.IsNullOrWhiteSpace(attachment.ContentType)
             ? "application/octet-stream"

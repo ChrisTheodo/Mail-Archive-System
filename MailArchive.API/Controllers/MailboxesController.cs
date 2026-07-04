@@ -1,20 +1,27 @@
+using MailArchive.Application.Audit;
+using MailArchive.Application.Common;
 using MailArchive.Application.Contracts.Mailboxes;
 using MailArchive.Application.Mailboxes;
 using MailArchive.Application.Mailboxes.Queries;
-using MailArchive.Application.Common;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MailArchive.API.Controllers;
 
+[Authorize(Roles = "Admin")]
 [ApiController]
 [Route("api/mailboxes")]
 public class MailboxesController : ControllerBase
 {
     private readonly IMailboxService _service;
+    private readonly IAuditLogService _auditLogService;
 
-    public MailboxesController(IMailboxService service)
+    public MailboxesController(
+        IMailboxService service,
+        IAuditLogService auditLogService)
     {
         _service = service;
+        _auditLogService = auditLogService;
     }
 
     // GET: api/mailboxes?page=1&pageSize=20&search=abc
@@ -22,6 +29,10 @@ public class MailboxesController : ControllerBase
     public async Task<IActionResult> GetAll([FromQuery] MailboxQueryParameters query)
     {
         var result = await _service.GetPagedAsync(query);
+
+        await _auditLogService.LogAsync(
+            action: "MailboxListViewed",
+            entityType: "Mailbox");
 
         var mapped = new PagedResult<MailboxResponse>
         {
@@ -47,6 +58,11 @@ public class MailboxesController : ControllerBase
         if (!result.IsSuccess)
             return NotFound(ApiResponse<MailboxResponse>.Fail(result.Error!));
 
+        await _auditLogService.LogAsync(
+            action: "MailboxViewed",
+            entityType: "Mailbox",
+            entityId: id);
+
         var x = result.Value!;
 
         var response = new MailboxResponse(
@@ -69,6 +85,11 @@ public class MailboxesController : ControllerBase
 
         var x = result.Value!;
 
+        await _auditLogService.LogAsync(
+            action: "MailboxCreated",
+            entityType: "Mailbox",
+            entityId: x.Id);
+
         var response = new MailboxResponse(
             x.Id,
             x.DisplayName,
@@ -88,6 +109,11 @@ public class MailboxesController : ControllerBase
             return NotFound(ApiResponse<string>.Fail(result.Error!));
 
         var x = result.Value!;
+
+        await _auditLogService.LogAsync(
+            action: "MailboxUpdated",
+            entityType: "Mailbox",
+            entityId: x.Id);
 
         var response = new MailboxResponse(
             x.Id,

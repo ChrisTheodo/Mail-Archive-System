@@ -50,6 +50,14 @@ public class CurrentUserService : ICurrentUserService
         }
     }
 
+    public string? IpAddress
+    {
+        get
+        {
+            return _httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
+        }
+    }
+
     public bool IsAdmin
     {
         get

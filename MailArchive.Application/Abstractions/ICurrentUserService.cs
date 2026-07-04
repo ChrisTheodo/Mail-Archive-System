@@ -10,5 +10,7 @@ public interface ICurrentUserService
 
     string? Role { get; }
 
+    string? IpAddress { get; }
+
     bool IsAdmin { get; }
 }

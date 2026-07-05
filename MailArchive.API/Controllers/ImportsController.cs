@@ -84,10 +84,11 @@ public class ImportsController : ControllerBase
     }
 
     [HttpPost("pst/upload")]
+    [Consumes("multipart/form-data")]
     [RequestSizeLimit(1024L * 1024L * 1024L)]
     public async Task<IActionResult> UploadPstImport(
         [FromForm] Guid mailboxId,
-        [FromForm] IFormFile file)
+        IFormFile file)
     {
         if (file == null || file.Length == 0)
             return BadRequest(ApiResponse<string>.Fail("PstFileRequired"));

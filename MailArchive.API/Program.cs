@@ -1,6 +1,7 @@
 using System.Text;
 using MailArchive.API.Middleware;
 using MailArchive.API.Security;
+using MailArchive.API.Storage;
 using MailArchive.Application;
 using MailArchive.Application.Abstractions;
 using MailArchive.Application.Attachments;
@@ -28,6 +29,7 @@ builder.Services.AddScoped<IMailArchiveDbContext>(provider =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<IStoragePathResolver, StoragePathResolver>();
 
 builder.Services.Configure<MailArchiveSettings>(
     builder.Configuration.GetSection("MailArchive"));

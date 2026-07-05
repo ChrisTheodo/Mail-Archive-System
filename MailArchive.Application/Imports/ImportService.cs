@@ -98,6 +98,14 @@ public class ImportService : IImportService
         return Result<ImportBatch>.Success(importBatch);
     }
 
+    public async Task<IReadOnlyCollection<ImportError>> GetErrorsAsync(Guid importBatchId)
+    {
+        return await _db.ImportErrors
+            .Where(x => x.ImportBatchId == importBatchId)
+            .OrderByDescending(x => x.CreatedAt)
+            .ToListAsync();
+    }
+
     public async Task<Result<ImportBatch>> CreatePstImportAsync(CreatePstImportRequest request)
     {
         var pstFilename = request.PstFilename.Trim();
@@ -229,6 +237,18 @@ public class ImportService : IImportService
         importBatch.FailedMessages = request.FailedMessages;
         importBatch.CompletedAt = DateTime.UtcNow;
         importBatch.Status = ImportBatchStatus.Failed;
+
+        var errorMessage = string.IsNullOrWhiteSpace(request.ErrorMessage)
+            ? "Import marked as failed manually."
+            : request.ErrorMessage.Trim();
+
+        _db.ImportErrors.Add(new ImportError
+        {
+            Id = Guid.NewGuid(),
+            ImportBatchId = importBatch.Id,
+            Message = errorMessage,
+            CreatedAt = DateTime.UtcNow
+        });
 
         await _db.SaveChangesAsync();
 

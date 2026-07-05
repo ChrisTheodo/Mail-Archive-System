@@ -17,6 +17,8 @@ public interface IMailArchiveDbContext
 
     DbSet<ImportBatch> ImportBatches { get; }
 
+    DbSet<ImportError> ImportErrors { get; }
+
     DbSet<AuditLog> AuditLogs { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

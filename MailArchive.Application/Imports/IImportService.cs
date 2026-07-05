@@ -11,6 +11,8 @@ public interface IImportService
 
     Task<Result<ImportBatch>> GetByIdAsync(Guid id);
 
+    Task<IReadOnlyCollection<ImportError>> GetErrorsAsync(Guid importBatchId);
+
     Task<Result<ImportBatch>> CreatePstImportAsync(CreatePstImportRequest request);
 
     Task<Result<ImportBatch>> StartAsync(Guid id);

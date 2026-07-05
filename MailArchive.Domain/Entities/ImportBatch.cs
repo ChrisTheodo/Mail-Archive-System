@@ -29,4 +29,6 @@ public class ImportBatch
     public int FailedMessages { get; set; }
 
     public ICollection<Email> Emails { get; set; } = new List<Email>();
+
+    public ICollection<ImportError> ImportErrors { get; set; } = new List<ImportError>();
 }

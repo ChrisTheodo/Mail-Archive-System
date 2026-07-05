@@ -168,7 +168,14 @@ public class ImportsController : ControllerBase
         var result = await _service.ProcessAsync(id);
 
         if (!result.IsSuccess)
+        {
+            await _auditLogService.LogAsync(
+                action: "ImportProcessFailed",
+                entityType: "ImportBatch",
+                entityId: id);
+
             return BadRequest(ApiResponse<string>.Fail(result.Error!));
+        }
 
         await _auditLogService.LogAsync(
             action: "ImportProcessed",
@@ -213,19 +220,23 @@ public class ImportsController : ControllerBase
     [HttpGet("{id:guid}/errors")]
     public async Task<IActionResult> GetErrors(Guid id)
     {
-        var result = await _service.GetByIdAsync(id);
+        var importResult = await _service.GetByIdAsync(id);
 
-        if (!result.IsSuccess)
-            return NotFound(ApiResponse<IReadOnlyCollection<ImportErrorResponse>>.Fail(result.Error!));
+        if (!importResult.IsSuccess)
+            return NotFound(ApiResponse<IReadOnlyCollection<ImportErrorResponse>>.Fail(importResult.Error!));
+
+        var errors = await _service.GetErrorsAsync(id);
 
         await _auditLogService.LogAsync(
             action: "ImportErrorsViewed",
             entityType: "ImportBatch",
             entityId: id);
 
-        IReadOnlyCollection<ImportErrorResponse> errors = new List<ImportErrorResponse>();
+        var response = errors
+            .Select(MapToErrorResponse)
+            .ToList();
 
-        return Ok(ApiResponse<IReadOnlyCollection<ImportErrorResponse>>.Ok(errors));
+        return Ok(ApiResponse<IReadOnlyCollection<ImportErrorResponse>>.Ok(response));
     }
 
     private static ImportBatchResponse MapToResponse(ImportBatch importBatch)
@@ -244,6 +255,16 @@ public class ImportsController : ControllerBase
             importBatch.TotalMessages,
             importBatch.ImportedMessages,
             importBatch.FailedMessages
+        );
+    }
+
+    private static ImportErrorResponse MapToErrorResponse(ImportError error)
+    {
+        return new ImportErrorResponse(
+            error.Id,
+            error.ImportBatchId,
+            error.Message,
+            error.CreatedAt
         );
     }
 

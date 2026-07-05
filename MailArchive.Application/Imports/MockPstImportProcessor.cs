@@ -9,10 +9,14 @@ namespace MailArchive.Application.Imports;
 public class MockPstImportProcessor : IPstImportProcessor
 {
     private readonly IMailArchiveDbContext _db;
+    private readonly IStoragePathResolver _storagePathResolver;
 
-    public MockPstImportProcessor(IMailArchiveDbContext db)
+    public MockPstImportProcessor(
+        IMailArchiveDbContext db,
+        IStoragePathResolver storagePathResolver)
     {
         _db = db;
+        _storagePathResolver = storagePathResolver;
     }
 
     public async Task<Result<ImportBatch>> ProcessAsync(Guid importBatchId)
@@ -34,13 +38,23 @@ public class MockPstImportProcessor : IPstImportProcessor
         if (importBatch.Status == ImportBatchStatus.Failed)
             return Result<ImportBatch>.Failure("ImportBatchAlreadyFailed");
 
+        if (string.IsNullOrWhiteSpace(importBatch.PstStoragePath))
+            return await FailProcessingAsync(importBatch, "PstStoragePathMissing");
+
+        var pstFilePath = _storagePathResolver.ResolvePath(importBatch.PstStoragePath);
+
+        if (!File.Exists(pstFilePath))
+            return await FailProcessingAsync(importBatch, "PstFileNotFound");
+
         importBatch.Status = ImportBatchStatus.Running;
         importBatch.StartedAt = DateTime.UtcNow;
         importBatch.CompletedAt = null;
 
         await _db.SaveChangesAsync();
 
-        var mockEmails = CreateMockEmails(importBatch);
+        var pstFileInfo = new FileInfo(pstFilePath);
+
+        var mockEmails = CreateMockEmails(importBatch, pstFileInfo.Length);
 
         var importedMessages = 0;
 
@@ -75,10 +89,35 @@ public class MockPstImportProcessor : IPstImportProcessor
         return Result<ImportBatch>.Success(completedImport);
     }
 
-    private static List<Email> CreateMockEmails(ImportBatch importBatch)
+    private async Task<Result<ImportBatch>> FailProcessingAsync(
+        ImportBatch importBatch,
+        string errorMessage)
+    {
+        importBatch.Status = ImportBatchStatus.Failed;
+        importBatch.CompletedAt = DateTime.UtcNow;
+        importBatch.TotalMessages = Math.Max(importBatch.TotalMessages, 0);
+        importBatch.ImportedMessages = Math.Max(importBatch.ImportedMessages, 0);
+        importBatch.FailedMessages = Math.Max(importBatch.FailedMessages, 1);
+
+        _db.ImportErrors.Add(new ImportError
+        {
+            Id = Guid.NewGuid(),
+            ImportBatchId = importBatch.Id,
+            Message = errorMessage,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await _db.SaveChangesAsync();
+
+        return Result<ImportBatch>.Failure(errorMessage);
+    }
+
+    private static List<Email> CreateMockEmails(ImportBatch importBatch, long pstFileSizeBytes)
     {
         var mailbox = importBatch.Mailbox;
         var owner = mailbox.OwnerUser;
+
+        var now = DateTime.UtcNow;
 
         return new List<Email>
         {
@@ -93,12 +132,12 @@ public class MockPstImportProcessor : IPstImportProcessor
                 SenderEmail = "mock.sender@example.com",
                 SenderName = "Mock Sender",
                 Subject = $"Mock imported email 1 from {importBatch.PstFilename}",
-                BodyText = "This is a mock imported email created by the mock PST import processor.",
-                BodyHtml = "<p>This is a mock imported email created by the mock PST import processor.</p>",
-                SentAt = DateTime.UtcNow.AddMinutes(-30),
-                ReceivedAt = DateTime.UtcNow.AddMinutes(-29),
+                BodyText = $"This is a mock imported email created from uploaded PST file {importBatch.PstFilename}. File size: {pstFileSizeBytes} bytes.",
+                BodyHtml = $"<p>This is a mock imported email created from uploaded PST file {importBatch.PstFilename}. File size: {pstFileSizeBytes} bytes.</p>",
+                SentAt = now.AddMinutes(-30),
+                ReceivedAt = now.AddMinutes(-29),
                 HasAttachments = false,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = now,
                 Recipients = new List<EmailRecipient>
                 {
                     new EmailRecipient
@@ -121,12 +160,12 @@ public class MockPstImportProcessor : IPstImportProcessor
                 SenderEmail = "mock.notifications@example.com",
                 SenderName = "Mock Notifications",
                 Subject = $"Mock imported email 2 from {importBatch.PstFilename}",
-                BodyText = "This is the second mock email generated for import pipeline testing.",
-                BodyHtml = "<p>This is the second mock email generated for import pipeline testing.</p>",
-                SentAt = DateTime.UtcNow.AddMinutes(-20),
-                ReceivedAt = DateTime.UtcNow.AddMinutes(-19),
+                BodyText = $"This is the second mock email generated from uploaded PST file {importBatch.PstFilename}. File size: {pstFileSizeBytes} bytes.",
+                BodyHtml = $"<p>This is the second mock email generated from uploaded PST file {importBatch.PstFilename}. File size: {pstFileSizeBytes} bytes.</p>",
+                SentAt = now.AddMinutes(-20),
+                ReceivedAt = now.AddMinutes(-19),
                 HasAttachments = false,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = now,
                 Recipients = new List<EmailRecipient>
                 {
                     new EmailRecipient

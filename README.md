@@ -1,4 +1,5 @@
-# MailArchive System
+# MailArchive System ### !!!!!!!!!!!!!!!!!!!!!!README OUTDATED!!!!!!!!!!!!!!!!!!!!!!!!
+
 ### !!!!!!!!!!!!!!!!!!!!!!README OUTDATED!!!!!!!!!!!!!!!!!!!!!!!!
 
 Backend σύστημα για διαχείριση mailboxes με υποστήριξη χρηστών, pagination και δομημένων API responses. Υλοποιημένο με ASP.NET Core, EF Core και PostgreSQL.

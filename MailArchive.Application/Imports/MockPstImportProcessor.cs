@@ -1,5 +1,8 @@
+using System.Security.Cryptography;
+using System.Text;
 using MailArchive.Application.Abstractions;
 using MailArchive.Application.Common;
+using MailArchive.Application.Imports.Parsing;
 using MailArchive.Domain.Entities;
 using MailArchive.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -10,13 +13,16 @@ public class MockPstImportProcessor : IPstImportProcessor
 {
     private readonly IMailArchiveDbContext _db;
     private readonly IStoragePathResolver _storagePathResolver;
+    private readonly IPstParser _pstParser;
 
     public MockPstImportProcessor(
         IMailArchiveDbContext db,
-        IStoragePathResolver storagePathResolver)
+        IStoragePathResolver storagePathResolver,
+        IPstParser pstParser)
     {
         _db = db;
         _storagePathResolver = storagePathResolver;
+        _pstParser = pstParser;
     }
 
     public async Task<Result<ImportBatch>> ProcessAsync(Guid importBatchId)
@@ -52,14 +58,31 @@ public class MockPstImportProcessor : IPstImportProcessor
 
         await _db.SaveChangesAsync();
 
-        var pstFileInfo = new FileInfo(pstFilePath);
+        IReadOnlyCollection<ParsedPstEmail> parsedEmails;
 
-        var mockEmails = CreateMockEmails(importBatch, pstFileInfo.Length);
+        try
+        {
+            parsedEmails = await _pstParser.ParseAsync(pstFilePath);
+        }
+        catch (Exception ex)
+        {
+            return await FailProcessingAsync(
+                importBatch,
+                $"PstParsingFailed: {ex.Message}");
+        }
 
         var importedMessages = 0;
+        var index = 0;
 
-        foreach (var email in mockEmails)
+        foreach (var parsedEmail in parsedEmails)
         {
+            index++;
+
+            var email = MapParsedEmailToEntity(
+                importBatch,
+                parsedEmail,
+                index);
+
             var exists = await _db.Emails.AnyAsync(x =>
                 x.MailboxId == email.MailboxId &&
                 x.MessageHash == email.MessageHash);
@@ -73,7 +96,7 @@ public class MockPstImportProcessor : IPstImportProcessor
 
         await _db.SaveChangesAsync();
 
-        importBatch.TotalMessages = mockEmails.Count;
+        importBatch.TotalMessages = parsedEmails.Count;
         importBatch.ImportedMessages = importedMessages;
         importBatch.FailedMessages = 0;
         importBatch.CompletedAt = DateTime.UtcNow;
@@ -87,6 +110,72 @@ public class MockPstImportProcessor : IPstImportProcessor
             .FirstAsync(x => x.Id == importBatch.Id);
 
         return Result<ImportBatch>.Success(completedImport);
+    }
+
+    private Email MapParsedEmailToEntity(
+        ImportBatch importBatch,
+        ParsedPstEmail parsedEmail,
+        int index)
+    {
+        var now = DateTime.UtcNow;
+
+        var messageHash = CreateMessageHash(
+            importBatch.Id,
+            index,
+            parsedEmail.InternetMessageId,
+            parsedEmail.SenderEmail,
+            parsedEmail.Subject,
+            parsedEmail.SentAt);
+
+        var recipients = parsedEmail.Recipients
+            .Where(x => !string.IsNullOrWhiteSpace(x.RecipientEmail))
+            .Select(x => new EmailRecipient
+            {
+                Id = Guid.NewGuid(),
+                RecipientType = x.RecipientType,
+                RecipientEmail = x.RecipientEmail.Trim().ToLowerInvariant(),
+                RecipientName = string.IsNullOrWhiteSpace(x.RecipientName)
+                    ? null
+                    : x.RecipientName.Trim()
+            })
+            .ToList();
+
+        if (recipients.Count == 0)
+        {
+            recipients.Add(new EmailRecipient
+            {
+                Id = Guid.NewGuid(),
+                RecipientType = RecipientType.To,
+                RecipientEmail = importBatch.Mailbox.OwnerUser.Email,
+                RecipientName = importBatch.Mailbox.OwnerUser.DisplayName
+            });
+        }
+
+        return new Email
+        {
+            Id = Guid.NewGuid(),
+            MailboxId = importBatch.MailboxId,
+            ImportBatchId = importBatch.Id,
+            InternetMessageId = parsedEmail.InternetMessageId,
+            MessageHash = messageHash,
+            FolderPath = string.IsNullOrWhiteSpace(parsedEmail.FolderPath)
+                ? "Inbox"
+                : parsedEmail.FolderPath.Trim(),
+            SenderEmail = parsedEmail.SenderEmail.Trim().ToLowerInvariant(),
+            SenderName = string.IsNullOrWhiteSpace(parsedEmail.SenderName)
+                ? null
+                : parsedEmail.SenderName.Trim(),
+            Subject = string.IsNullOrWhiteSpace(parsedEmail.Subject)
+                ? "(No subject)"
+                : parsedEmail.Subject.Trim(),
+            BodyText = parsedEmail.BodyText,
+            BodyHtml = parsedEmail.BodyHtml,
+            SentAt = parsedEmail.SentAt,
+            ReceivedAt = parsedEmail.ReceivedAt ?? parsedEmail.SentAt ?? now,
+            HasAttachments = false,
+            CreatedAt = now,
+            Recipients = recipients
+        };
     }
 
     private async Task<Result<ImportBatch>> FailProcessingAsync(
@@ -112,71 +201,24 @@ public class MockPstImportProcessor : IPstImportProcessor
         return Result<ImportBatch>.Failure(errorMessage);
     }
 
-    private static List<Email> CreateMockEmails(ImportBatch importBatch, long pstFileSizeBytes)
+    private static string CreateMessageHash(
+        Guid importBatchId,
+        int index,
+        string? internetMessageId,
+        string senderEmail,
+        string? subject,
+        DateTime? sentAt)
     {
-        var mailbox = importBatch.Mailbox;
-        var owner = mailbox.OwnerUser;
+        var raw = string.Join("|",
+            importBatchId,
+            index,
+            internetMessageId ?? string.Empty,
+            senderEmail,
+            subject ?? string.Empty,
+            sentAt?.ToString("O") ?? string.Empty);
 
-        var now = DateTime.UtcNow;
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
 
-        return new List<Email>
-        {
-            new Email
-            {
-                Id = Guid.NewGuid(),
-                MailboxId = importBatch.MailboxId,
-                ImportBatchId = importBatch.Id,
-                InternetMessageId = $"<mock-import-{importBatch.Id:N}-001@mailarchive.local>",
-                MessageHash = $"mock-import-{importBatch.Id:N}-001",
-                FolderPath = "Inbox",
-                SenderEmail = "mock.sender@example.com",
-                SenderName = "Mock Sender",
-                Subject = $"Mock imported email 1 from {importBatch.PstFilename}",
-                BodyText = $"This is a mock imported email created from uploaded PST file {importBatch.PstFilename}. File size: {pstFileSizeBytes} bytes.",
-                BodyHtml = $"<p>This is a mock imported email created from uploaded PST file {importBatch.PstFilename}. File size: {pstFileSizeBytes} bytes.</p>",
-                SentAt = now.AddMinutes(-30),
-                ReceivedAt = now.AddMinutes(-29),
-                HasAttachments = false,
-                CreatedAt = now,
-                Recipients = new List<EmailRecipient>
-                {
-                    new EmailRecipient
-                    {
-                        Id = Guid.NewGuid(),
-                        RecipientType = RecipientType.To,
-                        RecipientEmail = owner.Email,
-                        RecipientName = owner.DisplayName
-                    }
-                }
-            },
-            new Email
-            {
-                Id = Guid.NewGuid(),
-                MailboxId = importBatch.MailboxId,
-                ImportBatchId = importBatch.Id,
-                InternetMessageId = $"<mock-import-{importBatch.Id:N}-002@mailarchive.local>",
-                MessageHash = $"mock-import-{importBatch.Id:N}-002",
-                FolderPath = "Inbox",
-                SenderEmail = "mock.notifications@example.com",
-                SenderName = "Mock Notifications",
-                Subject = $"Mock imported email 2 from {importBatch.PstFilename}",
-                BodyText = $"This is the second mock email generated from uploaded PST file {importBatch.PstFilename}. File size: {pstFileSizeBytes} bytes.",
-                BodyHtml = $"<p>This is the second mock email generated from uploaded PST file {importBatch.PstFilename}. File size: {pstFileSizeBytes} bytes.</p>",
-                SentAt = now.AddMinutes(-20),
-                ReceivedAt = now.AddMinutes(-19),
-                HasAttachments = false,
-                CreatedAt = now,
-                Recipients = new List<EmailRecipient>
-                {
-                    new EmailRecipient
-                    {
-                        Id = Guid.NewGuid(),
-                        RecipientType = RecipientType.To,
-                        RecipientEmail = owner.Email,
-                        RecipientName = owner.DisplayName
-                    }
-                }
-            }
-        };
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 }

@@ -9,6 +9,7 @@ using MailArchive.Application.Audit;
 using MailArchive.Application.Auth;
 using MailArchive.Application.Emails;
 using MailArchive.Application.Imports;
+using MailArchive.Application.Imports.Parsing;
 using MailArchive.Application.Mailboxes;
 using MailArchive.Application.Users;
 using MailArchive.Persistence;
@@ -40,6 +41,7 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAttachmentService, AttachmentService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 
+builder.Services.AddScoped<IPstParser, MockPstParser>();
 builder.Services.AddScoped<IPstImportProcessor, MockPstImportProcessor>();
 builder.Services.AddScoped<IImportService, ImportService>();
 

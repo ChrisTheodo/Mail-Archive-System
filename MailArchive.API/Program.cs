@@ -37,6 +37,8 @@ builder.Services.AddScoped<IMailboxService, MailboxService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAttachmentService, AttachmentService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
+
+builder.Services.AddScoped<IPstImportProcessor, MockPstImportProcessor>();
 builder.Services.AddScoped<IImportService, ImportService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();

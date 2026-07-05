@@ -95,6 +95,22 @@ public class ImportsController : ControllerBase
         return Ok(ApiResponse<ImportBatchResponse>.Ok(MapToResponse(result.Value!)));
     }
 
+    [HttpPost("{id:guid}/process")]
+    public async Task<IActionResult> Process(Guid id)
+    {
+        var result = await _service.ProcessAsync(id);
+
+        if (!result.IsSuccess)
+            return BadRequest(ApiResponse<string>.Fail(result.Error!));
+
+        await _auditLogService.LogAsync(
+            action: "ImportProcessed",
+            entityType: "ImportBatch",
+            entityId: id);
+
+        return Ok(ApiResponse<ImportBatchResponse>.Ok(MapToResponse(result.Value!)));
+    }
+
     [HttpPost("{id:guid}/complete")]
     public async Task<IActionResult> Complete(Guid id, CompleteImportRequest request)
     {

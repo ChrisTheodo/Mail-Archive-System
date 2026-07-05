@@ -18,4 +18,6 @@ public interface IImportService
     Task<Result<ImportBatch>> CompleteAsync(Guid id, CompleteImportRequest request);
 
     Task<Result<ImportBatch>> FailAsync(Guid id, FailImportRequest request);
+
+    Task<Result<ImportBatch>> ProcessAsync(Guid id);
 }

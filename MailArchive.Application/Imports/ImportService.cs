@@ -11,10 +11,14 @@ namespace MailArchive.Application.Imports;
 public class ImportService : IImportService
 {
     private readonly IMailArchiveDbContext _db;
+    private readonly IPstImportProcessor _pstImportProcessor;
 
-    public ImportService(IMailArchiveDbContext db)
+    public ImportService(
+        IMailArchiveDbContext db,
+        IPstImportProcessor pstImportProcessor)
     {
         _db = db;
+        _pstImportProcessor = pstImportProcessor;
     }
 
     public async Task<PagedResult<ImportBatch>> GetPagedAsync(ImportBatchQueryParameters query)
@@ -224,5 +228,10 @@ public class ImportService : IImportService
         await _db.SaveChangesAsync();
 
         return Result<ImportBatch>.Success(importBatch);
+    }
+
+    public async Task<Result<ImportBatch>> ProcessAsync(Guid id)
+    {
+        return await _pstImportProcessor.ProcessAsync(id);
     }
 }

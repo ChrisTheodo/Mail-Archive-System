@@ -42,7 +42,7 @@ builder.Services.AddScoped<IAttachmentService, AttachmentService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 
 builder.Services.AddScoped<IPstParser, MockPstParser>();
-builder.Services.AddScoped<IPstImportProcessor, MockPstImportProcessor>();
+builder.Services.AddScoped<IPstImportProcessor, PstImportProcessor>();
 builder.Services.AddScoped<IImportService, ImportService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();

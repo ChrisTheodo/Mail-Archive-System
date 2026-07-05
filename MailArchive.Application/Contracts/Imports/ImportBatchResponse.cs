@@ -4,6 +4,7 @@ public record ImportBatchResponse(
     Guid Id,
     string PstFilename,
     string PstHash,
+    string? PstStoragePath,
     Guid MailboxId,
     string? MailboxDisplayName,
     string? MailboxOwnerEmail,

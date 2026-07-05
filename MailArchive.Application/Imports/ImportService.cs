@@ -51,6 +51,7 @@ public class ImportService : IImportService
             baseQuery = baseQuery.Where(x =>
                 x.PstFilename.ToLower().Contains(search) ||
                 x.PstHash.ToLower().Contains(search) ||
+                (x.PstStoragePath != null && x.PstStoragePath.ToLower().Contains(search)) ||
                 x.Mailbox.DisplayName.ToLower().Contains(search) ||
                 x.Mailbox.OwnerUser.Email.ToLower().Contains(search));
         }
@@ -101,6 +102,9 @@ public class ImportService : IImportService
     {
         var pstFilename = request.PstFilename.Trim();
         var pstHash = request.PstHash.Trim();
+        var pstStoragePath = string.IsNullOrWhiteSpace(request.PstStoragePath)
+            ? null
+            : request.PstStoragePath.Trim();
 
         if (string.IsNullOrWhiteSpace(pstFilename))
             return Result<ImportBatch>.Failure("PstFilenameRequired");
@@ -128,6 +132,7 @@ public class ImportService : IImportService
             MailboxId = request.MailboxId,
             PstFilename = pstFilename,
             PstHash = pstHash,
+            PstStoragePath = pstStoragePath,
             Status = ImportBatchStatus.Pending,
             StartedAt = DateTime.UtcNow,
             CompletedAt = null,

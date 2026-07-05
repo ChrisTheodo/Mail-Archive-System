@@ -6,25 +6,27 @@ public class ImportBatch
 {
     public Guid Id { get; set; }
 
-    // Source file info
-    public string PstFilename { get; set; } = null!;
-    public string PstHash { get; set; } = null!;
+    public string PstFilename { get; set; } = string.Empty;
 
-    // Relation
+    public string PstHash { get; set; } = string.Empty;
+
+    public string? PstStoragePath { get; set; }
+
     public Guid MailboxId { get; set; }
+
     public Mailbox Mailbox { get; set; } = null!;
 
-    // Status tracking
-    public ImportBatchStatus Status { get; set; } = ImportBatchStatus.Pending;
+    public ImportBatchStatus Status { get; set; }
 
-    // Timing
-    public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+    public DateTime StartedAt { get; set; }
+
     public DateTime? CompletedAt { get; set; }
 
-    // Metrics
     public int TotalMessages { get; set; }
+
     public int ImportedMessages { get; set; }
+
     public int FailedMessages { get; set; }
-    
+
     public ICollection<Email> Emails { get; set; } = new List<Email>();
 }

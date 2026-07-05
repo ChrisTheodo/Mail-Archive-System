@@ -8,6 +8,8 @@ public class ImportBatchConfiguration : IEntityTypeConfiguration<ImportBatch>
 {
     public void Configure(EntityTypeBuilder<ImportBatch> builder)
     {
+        builder.ToTable("import_batches");
+
         builder.HasKey(x => x.Id);
 
         builder.Property(x => x.PstFilename)
@@ -18,8 +20,13 @@ public class ImportBatchConfiguration : IEntityTypeConfiguration<ImportBatch>
             .IsRequired()
             .HasMaxLength(128);
 
+        builder.Property(x => x.PstStoragePath)
+            .HasMaxLength(1000);
+
         builder.Property(x => x.Status)
-            .IsRequired();
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(50);
 
         builder.Property(x => x.StartedAt)
             .IsRequired();
@@ -33,20 +40,22 @@ public class ImportBatchConfiguration : IEntityTypeConfiguration<ImportBatch>
         builder.Property(x => x.FailedMessages)
             .IsRequired();
 
-        builder.HasIndex(x => x.MailboxId);
+        builder.HasOne(x => x.Mailbox)
+            .WithMany()
+            .HasForeignKey(x => x.MailboxId)
+            .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasIndex(x => x.PstHash);
+        builder.HasIndex(x => x.MailboxId);
 
         builder.HasIndex(x => x.Status);
 
         builder.HasIndex(x => x.StartedAt);
 
-        builder.HasIndex(x => new { x.MailboxId, x.PstHash });
+        builder.HasIndex(x => x.CompletedAt);
 
-        builder
-            .HasMany(x => x.Emails)
-            .WithOne(x => x.ImportBatch)
-            .HasForeignKey(x => x.ImportBatchId)
-            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => x.PstHash);
+
+        builder.HasIndex(x => new { x.MailboxId, x.PstHash })
+            .IsUnique();
     }
 }

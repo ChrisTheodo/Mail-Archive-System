@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using MailArchive.Application.Audit;
 using MailArchive.Application.Common;
 using MailArchive.Application.Contracts.Imports;
@@ -16,13 +17,16 @@ public class ImportsController : ControllerBase
 {
     private readonly IImportService _service;
     private readonly IAuditLogService _auditLogService;
+    private readonly IWebHostEnvironment _environment;
 
     public ImportsController(
         IImportService service,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        IWebHostEnvironment environment)
     {
         _service = service;
         _auditLogService = auditLogService;
+        _environment = environment;
     }
 
     [HttpGet]
@@ -73,6 +77,69 @@ public class ImportsController : ControllerBase
 
         await _auditLogService.LogAsync(
             action: "PstImportCreated",
+            entityType: "ImportBatch",
+            entityId: importBatch.Id);
+
+        return Ok(ApiResponse<ImportBatchResponse>.Ok(MapToResponse(importBatch)));
+    }
+
+    [HttpPost("pst/upload")]
+    [RequestSizeLimit(1024L * 1024L * 1024L)]
+    public async Task<IActionResult> UploadPstImport(
+        [FromForm] Guid mailboxId,
+        [FromForm] IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(ApiResponse<string>.Fail("PstFileRequired"));
+
+        var originalFileName = Path.GetFileName(file.FileName);
+
+        if (string.IsNullOrWhiteSpace(originalFileName))
+            return BadRequest(ApiResponse<string>.Fail("PstFilenameRequired"));
+
+        if (!originalFileName.EndsWith(".pst", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(ApiResponse<string>.Fail("OnlyPstFilesAreAllowed"));
+
+        var pstHash = await CalculateSha256Async(file);
+
+        var storageRoot = Path.Combine(
+            _environment.ContentRootPath,
+            "storage",
+            "imports");
+
+        Directory.CreateDirectory(storageRoot);
+
+        var storedFileName = $"{Guid.NewGuid():N}_{SanitizeFileName(originalFileName)}";
+        var fullPath = Path.Combine(storageRoot, storedFileName);
+
+        await using (var stream = System.IO.File.Create(fullPath))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        var relativeStoragePath = Path.Combine("storage", "imports", storedFileName)
+            .Replace("\\", "/");
+
+        var request = new CreatePstImportRequest(
+            mailboxId,
+            originalFileName,
+            pstHash,
+            relativeStoragePath);
+
+        var result = await _service.CreatePstImportAsync(request);
+
+        if (!result.IsSuccess)
+        {
+            if (System.IO.File.Exists(fullPath))
+                System.IO.File.Delete(fullPath);
+
+            return BadRequest(ApiResponse<string>.Fail(result.Error!));
+        }
+
+        var importBatch = result.Value!;
+
+        await _auditLogService.LogAsync(
+            action: "PstImportUploaded",
             entityType: "ImportBatch",
             entityId: importBatch.Id);
 
@@ -167,6 +234,7 @@ public class ImportsController : ControllerBase
             importBatch.Id,
             importBatch.PstFilename,
             importBatch.PstHash,
+            importBatch.PstStoragePath,
             importBatch.MailboxId,
             importBatch.Mailbox?.DisplayName,
             importBatch.Mailbox?.OwnerUser?.Email,
@@ -177,5 +245,28 @@ public class ImportsController : ControllerBase
             importBatch.ImportedMessages,
             importBatch.FailedMessages
         );
+    }
+
+    private static async Task<string> CalculateSha256Async(IFormFile file)
+    {
+        await using var stream = file.OpenReadStream();
+
+        using var sha256 = SHA256.Create();
+
+        var hashBytes = await sha256.ComputeHashAsync(stream);
+
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    private static string SanitizeFileName(string fileName)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+
+        var sanitized = new string(
+            fileName.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray());
+
+        return string.IsNullOrWhiteSpace(sanitized)
+            ? "uploaded.pst"
+            : sanitized;
     }
 }

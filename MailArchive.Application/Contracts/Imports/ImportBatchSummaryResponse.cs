@@ -1,5 +1,3 @@
-using MailArchive.Domain.Enums;
-
 namespace MailArchive.Application.Contracts.Imports;
 
 public record ImportBatchSummaryResponse(
@@ -10,7 +8,7 @@ public record ImportBatchSummaryResponse(
     Guid MailboxId,
     string? MailboxDisplayName,
     string? MailboxOwnerEmail,
-    ImportBatchStatus Status,
+    string Status,
     DateTime StartedAt,
     DateTime? CompletedAt,
     int TotalMessages,

@@ -67,7 +67,7 @@ public class ImportSummariesController : ControllerBase
             importBatch.MailboxId,
             importBatch.Mailbox?.DisplayName,
             importBatch.Mailbox?.OwnerUser?.Email,
-            importBatch.Status,
+            importBatch.Status.ToString(),
             importBatch.StartedAt,
             importBatch.CompletedAt,
             importBatch.TotalMessages,

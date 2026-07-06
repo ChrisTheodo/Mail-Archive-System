@@ -1,14 +1,18 @@
+using System.Security.Cryptography;
 using MailArchive.Application.Abstractions;
 using MailArchive.Application.Audit;
 using MailArchive.Application.Common;
 using MailArchive.Application.Contracts.Auth;
 using MailArchive.Application.Contracts.Users;
+using MailArchive.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace MailArchive.Application.Auth;
 
 public class AuthService : IAuthService
 {
+    private const int RefreshTokenDays = 7;
+
     private readonly IMailArchiveDbContext _db;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
@@ -77,7 +81,7 @@ public class AuthService : IAuthService
             return Result<LoginResponse>.Failure("InvalidCredentials");
         }
 
-        var token = _jwtTokenGenerator.GenerateToken(user);
+        var response = await CreateLoginResponseAsync(user);
 
         await _auditLogService.LogAsync(
             action: "LoginSucceeded",
@@ -85,10 +89,104 @@ public class AuthService : IAuthService
             entityId: user.Id,
             userIdOverride: user.Id);
 
+        return Result<LoginResponse>.Success(response);
+    }
+
+    public async Task<Result<LoginResponse>> RefreshAsync(RefreshTokenRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            return Result<LoginResponse>.Failure("RefreshTokenRequired");
+
+        var refreshTokenHash = HashRefreshToken(request.RefreshToken);
+
+        var storedRefreshToken = await _db.RefreshTokens
+            .Include(x => x.User)
+            .FirstOrDefaultAsync(x => x.TokenHash == refreshTokenHash);
+
+        if (storedRefreshToken == null)
+            return Result<LoginResponse>.Failure("RefreshTokenInvalid");
+
+        if (storedRefreshToken.RevokedAt.HasValue)
+            return Result<LoginResponse>.Failure("RefreshTokenRevoked");
+
+        if (storedRefreshToken.ExpiresAt <= DateTime.UtcNow)
+            return Result<LoginResponse>.Failure("RefreshTokenExpired");
+
+        if (!storedRefreshToken.User.IsActive)
+            return Result<LoginResponse>.Failure("UserInactive");
+
+        var rawNewRefreshToken = GenerateRawRefreshToken();
+        var newRefreshTokenHash = HashRefreshToken(rawNewRefreshToken);
+        var newRefreshTokenExpiresAtUtc = DateTime.UtcNow.AddDays(RefreshTokenDays);
+
+        storedRefreshToken.RevokedAt = DateTime.UtcNow;
+        storedRefreshToken.ReplacedByTokenHash = newRefreshTokenHash;
+
+        _db.RefreshTokens.Add(new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = storedRefreshToken.UserId,
+            TokenHash = newRefreshTokenHash,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = newRefreshTokenExpiresAtUtc,
+            RevokedAt = null,
+            ReplacedByTokenHash = null
+        });
+
+        await _db.SaveChangesAsync();
+
+        var token = _jwtTokenGenerator.GenerateToken(storedRefreshToken.User);
+
+        await _auditLogService.LogAsync(
+            action: "TokenRefreshed",
+            entityType: "User",
+            entityId: storedRefreshToken.UserId,
+            userIdOverride: storedRefreshToken.UserId);
+
         var response = new LoginResponse(
             token.AccessToken,
             "Bearer",
             token.ExpiresAtUtc,
+            rawNewRefreshToken,
+            newRefreshTokenExpiresAtUtc,
+            new UserResponse(
+                storedRefreshToken.User.Id,
+                storedRefreshToken.User.Email,
+                storedRefreshToken.User.DisplayName,
+                storedRefreshToken.User.IsActive
+            )
+        );
+
+        return Result<LoginResponse>.Success(response);
+    }
+
+    private async Task<LoginResponse> CreateLoginResponseAsync(User user)
+    {
+        var token = _jwtTokenGenerator.GenerateToken(user);
+
+        var rawRefreshToken = GenerateRawRefreshToken();
+        var refreshTokenHash = HashRefreshToken(rawRefreshToken);
+        var refreshTokenExpiresAtUtc = DateTime.UtcNow.AddDays(RefreshTokenDays);
+
+        _db.RefreshTokens.Add(new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TokenHash = refreshTokenHash,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = refreshTokenExpiresAtUtc,
+            RevokedAt = null,
+            ReplacedByTokenHash = null
+        });
+
+        await _db.SaveChangesAsync();
+
+        return new LoginResponse(
+            token.AccessToken,
+            "Bearer",
+            token.ExpiresAtUtc,
+            rawRefreshToken,
+            refreshTokenExpiresAtUtc,
             new UserResponse(
                 user.Id,
                 user.Email,
@@ -96,7 +194,19 @@ public class AuthService : IAuthService
                 user.IsActive
             )
         );
+    }
 
-        return Result<LoginResponse>.Success(response);
+    private static string GenerateRawRefreshToken()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(64);
+
+        return Convert.ToBase64String(bytes);
+    }
+
+    private static string HashRefreshToken(string refreshToken)
+    {
+        var bytes = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(refreshToken));
+
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 }

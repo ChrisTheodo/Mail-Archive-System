@@ -25,6 +25,8 @@ public class MailArchiveDbContext : DbContext, IMailArchiveDbContext
 
     public DbSet<ImportError> ImportErrors => Set<ImportError>();
 
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

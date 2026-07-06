@@ -6,4 +6,6 @@ namespace MailArchive.Application.Auth;
 public interface IAuthService
 {
     Task<Result<LoginResponse>> LoginAsync(LoginRequest request);
+
+    Task<Result<LoginResponse>> RefreshAsync(RefreshTokenRequest request);
 }

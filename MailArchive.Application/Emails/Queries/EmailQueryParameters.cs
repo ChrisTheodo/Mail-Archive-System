@@ -10,6 +10,8 @@ public class EmailQueryParameters
 
     public Guid? MailboxId { get; set; }
 
+    public Guid? ImportBatchId { get; set; }
+
     public DateTime? FromDate { get; set; }
 
     public DateTime? ToDate { get; set; }

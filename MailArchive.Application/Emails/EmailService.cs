@@ -123,6 +123,11 @@ public class EmailService : IEmailService
             query = query.Where(x => x.MailboxId == parameters.MailboxId.Value);
         }
 
+        if (parameters.ImportBatchId.HasValue)
+        {
+            query = query.Where(x => x.ImportBatchId == parameters.ImportBatchId.Value);
+        }
+
         if (parameters.FromDate.HasValue)
         {
             query = query.Where(x =>

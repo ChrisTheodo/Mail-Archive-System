@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using MailArchive.Application.Abstractions;
 using MailArchive.Application.Audit;
 using MailArchive.Application.Common;
@@ -160,6 +161,36 @@ public class AuthService : IAuthService
         return Result<LoginResponse>.Success(response);
     }
 
+    public async Task<Result<string>> RevokeRefreshTokenAsync(RefreshTokenRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            return Result<string>.Failure("RefreshTokenRequired");
+
+        var refreshTokenHash = HashRefreshToken(request.RefreshToken);
+
+        var storedRefreshToken = await _db.RefreshTokens
+            .Include(x => x.User)
+            .FirstOrDefaultAsync(x => x.TokenHash == refreshTokenHash);
+
+        if (storedRefreshToken == null)
+            return Result<string>.Failure("RefreshTokenInvalid");
+
+        if (storedRefreshToken.RevokedAt.HasValue)
+            return Result<string>.Failure("RefreshTokenAlreadyRevoked");
+
+        storedRefreshToken.RevokedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        await _auditLogService.LogAsync(
+            action: "RefreshTokenRevoked",
+            entityType: "User",
+            entityId: storedRefreshToken.UserId,
+            userIdOverride: storedRefreshToken.UserId);
+
+        return Result<string>.Success("RefreshTokenRevoked");
+    }
+
     private async Task<LoginResponse> CreateLoginResponseAsync(User user)
     {
         var token = _jwtTokenGenerator.GenerateToken(user);
@@ -205,7 +236,7 @@ public class AuthService : IAuthService
 
     private static string HashRefreshToken(string refreshToken)
     {
-        var bytes = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(refreshToken));
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken));
 
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }

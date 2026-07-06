@@ -196,13 +196,16 @@ public class EmailService : IEmailService
             var pattern = EmailSearchText.ToContainsPattern(term);
 
             query = query.Where(x =>
-                EF.Functions.ILike(x.Subject ?? string.Empty, pattern) ||
-                EF.Functions.ILike(x.BodyText ?? string.Empty, pattern) ||
-                EF.Functions.ILike(x.BodyHtml ?? string.Empty, pattern) ||
-                EF.Functions.ILike(x.SenderEmail ?? string.Empty, pattern) ||
-                EF.Functions.ILike(x.SenderName ?? string.Empty, pattern) ||
-                EF.Functions.ILike(x.InternetMessageId ?? string.Empty, pattern) ||
-                EF.Functions.ILike(x.FolderPath ?? string.Empty, pattern) ||
+                EF.Functions.ToTsVector(
+                        "english",
+                        (x.Subject ?? string.Empty) + " " +
+                        (x.BodyText ?? string.Empty) + " " +
+                        (x.BodyHtml ?? string.Empty) + " " +
+                        (x.SenderEmail ?? string.Empty) + " " +
+                        (x.SenderName ?? string.Empty) + " " +
+                        (x.InternetMessageId ?? string.Empty) + " " +
+                        (x.FolderPath ?? string.Empty))
+                    .Matches(EF.Functions.WebSearchToTsQuery("english", term)) ||
                 x.Recipients.Any(r =>
                     EF.Functions.ILike(r.RecipientEmail ?? string.Empty, pattern) ||
                     EF.Functions.ILike(r.RecipientName ?? string.Empty, pattern)) ||
@@ -224,11 +227,19 @@ public class EmailService : IEmailService
         if (string.IsNullOrWhiteSpace(sortBy) && searchTerms.Count > 0)
         {
             var firstTerm = searchTerms.First();
-            var pattern = EmailSearchText.ToContainsPattern(firstTerm);
 
             return query
-                .OrderByDescending(x => EF.Functions.ILike(x.Subject ?? string.Empty, pattern))
-                .ThenByDescending(x => EF.Functions.ILike(x.SenderEmail ?? string.Empty, pattern))
+                .OrderByDescending(x =>
+                    EF.Functions.ToTsVector(
+                            "english",
+                            (x.Subject ?? string.Empty) + " " +
+                            (x.BodyText ?? string.Empty) + " " +
+                            (x.BodyHtml ?? string.Empty) + " " +
+                            (x.SenderEmail ?? string.Empty) + " " +
+                            (x.SenderName ?? string.Empty) + " " +
+                            (x.InternetMessageId ?? string.Empty) + " " +
+                            (x.FolderPath ?? string.Empty))
+                        .Rank(EF.Functions.WebSearchToTsQuery("english", firstTerm)))
                 .ThenByDescending(x => x.ReceivedAt ?? x.SentAt ?? x.CreatedAt);
         }
 

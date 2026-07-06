@@ -8,26 +8,34 @@ public class EmailConfiguration : IEntityTypeConfiguration<Email>
 {
     public void Configure(EntityTypeBuilder<Email> builder)
     {
+        builder.ToTable("emails");
+
         builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.InternetMessageId)
+            .HasMaxLength(500);
 
         builder.Property(x => x.MessageHash)
             .IsRequired()
             .HasMaxLength(128);
 
-        builder.Property(x => x.InternetMessageId)
-            .HasMaxLength(500);
-
         builder.Property(x => x.FolderPath)
-            .HasMaxLength(1000);
+            .IsRequired()
+            .HasMaxLength(500);
 
         builder.Property(x => x.SenderEmail)
-            .HasMaxLength(200);
+            .IsRequired()
+            .HasMaxLength(320);
 
         builder.Property(x => x.SenderName)
-            .HasMaxLength(200);
+            .HasMaxLength(300);
 
         builder.Property(x => x.Subject)
-            .HasMaxLength(500);
+            .HasMaxLength(1000);
+
+        builder.Property(x => x.BodyText);
+
+        builder.Property(x => x.BodyHtml);
 
         builder.Property(x => x.HasAttachments)
             .IsRequired();
@@ -35,14 +43,22 @@ public class EmailConfiguration : IEntityTypeConfiguration<Email>
         builder.Property(x => x.CreatedAt)
             .IsRequired();
 
-        builder
-            .HasMany(x => x.Attachments)
+        builder.HasOne(x => x.Mailbox)
+            .WithMany(x => x.Emails)
+            .HasForeignKey(x => x.MailboxId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.ImportBatch)
+            .WithMany(x => x.Emails)
+            .HasForeignKey(x => x.ImportBatchId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasMany(x => x.Recipients)
             .WithOne(x => x.Email)
             .HasForeignKey(x => x.EmailId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder
-            .HasMany(x => x.Recipients)
+        builder.HasMany(x => x.Attachments)
             .WithOne(x => x.Email)
             .HasForeignKey(x => x.EmailId)
             .OnDelete(DeleteBehavior.Cascade);
@@ -63,11 +79,22 @@ public class EmailConfiguration : IEntityTypeConfiguration<Email>
 
         builder.HasIndex(x => x.MessageHash);
 
-        builder.HasIndex(x => new { x.MailboxId, x.ReceivedAt });
-
-        builder.HasIndex(x => new { x.MailboxId, x.InternetMessageId });
-
         builder.HasIndex(x => new { x.MailboxId, x.MessageHash })
             .IsUnique();
+
+        builder.HasIndex(x => new { x.MailboxId, x.ReceivedAt });
+
+        builder.HasIndex(x => new
+            {
+                x.Subject,
+                x.BodyText,
+                x.BodyHtml,
+                x.SenderEmail,
+                x.SenderName,
+                x.InternetMessageId,
+                x.FolderPath
+            })
+            .HasMethod("GIN")
+            .IsTsVectorExpressionIndex("english");
     }
 }

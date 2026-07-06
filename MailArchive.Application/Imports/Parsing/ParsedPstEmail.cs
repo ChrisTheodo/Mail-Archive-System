@@ -10,5 +10,6 @@ public record ParsedPstEmail(
     string? BodyHtml,
     DateTime? SentAt,
     DateTime? ReceivedAt,
-    IReadOnlyCollection<ParsedPstRecipient> Recipients
+    IReadOnlyCollection<ParsedPstRecipient> Recipients,
+    IReadOnlyCollection<ParsedPstAttachment> Attachments
 );

@@ -17,6 +17,7 @@ using MailArchive.Persistence.Seed;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +32,7 @@ builder.Services.AddScoped<IMailArchiveDbContext>(provider =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IStoragePathResolver, StoragePathResolver>();
+builder.Services.AddScoped<IAttachmentStorageService, AttachmentStorageService>();
 
 builder.Services.Configure<MailArchiveSettings>(
     builder.Configuration.GetSection("MailArchive"));
@@ -81,7 +83,35 @@ builder.Services
 builder.Services.AddAuthorization();
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+
+builder.Services.AddSwaggerGen(options =>
+{
+    const string bearerScheme = "Bearer";
+
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "MailArchive API",
+        Version = "v1"
+    });
+
+    options.AddSecurityDefinition(bearerScheme, new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Description = "Paste only the JWT access token. Do not include the word Bearer."
+    });
+
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecuritySchemeReference(bearerScheme, document),
+            new List<string>()
+        }
+    });
+});
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();

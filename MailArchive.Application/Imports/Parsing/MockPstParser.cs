@@ -1,3 +1,4 @@
+using System.Text;
 using MailArchive.Domain.Enums;
 
 namespace MailArchive.Application.Imports.Parsing;
@@ -33,6 +34,13 @@ public class MockPstParser : IPstParser
                         RecipientType.To,
                         "user@example.com",
                         "Test User")
+                },
+                Attachments: new List<ParsedPstAttachment>
+                {
+                    new ParsedPstAttachment(
+                        "mock-import-note.txt",
+                        "text/plain",
+                        Encoding.UTF8.GetBytes($"Mock attachment generated from {fileName}."))
                 }
             ),
             new ParsedPstEmail(
@@ -51,7 +59,8 @@ public class MockPstParser : IPstParser
                         RecipientType.To,
                         "user@example.com",
                         "Test User")
-                }
+                },
+                Attachments: new List<ParsedPstAttachment>()
             )
         };
 

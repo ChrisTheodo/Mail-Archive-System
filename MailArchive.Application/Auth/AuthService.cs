@@ -191,6 +191,50 @@ public class AuthService : IAuthService
         return Result<string>.Success("RefreshTokenRevoked");
     }
 
+    public async Task<Result<string>> LogoutAsync(LogoutRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.RefreshToken))
+        {
+            var refreshTokenHash = HashRefreshToken(request.RefreshToken);
+
+            var storedRefreshToken = await _db.RefreshTokens
+                .FirstOrDefaultAsync(x => x.TokenHash == refreshTokenHash);
+
+            if (storedRefreshToken == null)
+            {
+                await _auditLogService.LogAsync(
+                    action: "LogoutRefreshTokenInvalid",
+                    entityType: "Auth");
+            }
+            else if (!storedRefreshToken.RevokedAt.HasValue)
+            {
+                storedRefreshToken.RevokedAt = DateTime.UtcNow;
+
+                await _db.SaveChangesAsync();
+
+                await _auditLogService.LogAsync(
+                    action: "RefreshTokenRevoked",
+                    entityType: "User",
+                    entityId: storedRefreshToken.UserId,
+                    userIdOverride: storedRefreshToken.UserId);
+            }
+            else
+            {
+                await _auditLogService.LogAsync(
+                    action: "LogoutRefreshTokenAlreadyRevoked",
+                    entityType: "User",
+                    entityId: storedRefreshToken.UserId,
+                    userIdOverride: storedRefreshToken.UserId);
+            }
+        }
+
+        await _auditLogService.LogAsync(
+            action: "Logout",
+            entityType: "Auth");
+
+        return Result<string>.Success("LoggedOut");
+    }
+
     private async Task<LoginResponse> CreateLoginResponseAsync(User user)
     {
         var token = _jwtTokenGenerator.GenerateToken(user);

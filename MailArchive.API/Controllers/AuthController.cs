@@ -1,4 +1,3 @@
-using MailArchive.Application.Audit;
 using MailArchive.Application.Auth;
 using MailArchive.Application.Common;
 using MailArchive.Application.Contracts.Auth;
@@ -12,14 +11,10 @@ namespace MailArchive.API.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _service;
-    private readonly IAuditLogService _auditLogService;
 
-    public AuthController(
-        IAuthService service,
-        IAuditLogService auditLogService)
+    public AuthController(IAuthService service)
     {
         _service = service;
-        _auditLogService = auditLogService;
     }
 
     [AllowAnonymous]
@@ -60,12 +55,14 @@ public class AuthController : ControllerBase
 
     [Authorize]
     [HttpPost("logout")]
-    public async Task<IActionResult> Logout()
+    public async Task<IActionResult> Logout([FromBody] LogoutRequest? request)
     {
-        await _auditLogService.LogAsync(
-            action: "Logout",
-            entityType: "Auth");
+        var result = await _service.LogoutAsync(
+            request ?? new LogoutRequest(null));
 
-        return Ok(ApiResponse<string>.Ok("LoggedOut"));
+        if (!result.IsSuccess)
+            return BadRequest(ApiResponse<string>.Fail(result.Error!));
+
+        return Ok(ApiResponse<string>.Ok(result.Value!));
     }
 }

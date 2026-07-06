@@ -3,14 +3,15 @@ using MailArchive.Application.Common;
 using MailArchive.Application.Contracts.Emails;
 using MailArchive.Application.Emails;
 using MailArchive.Application.Emails.Queries;
+using MailArchive.Application.Emails.Search;
 using MailArchive.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MailArchive.API.Controllers;
 
-[Authorize]
 [ApiController]
+[Authorize]
 [Route("api/emails")]
 public class EmailsController : ControllerBase
 {
@@ -25,9 +26,8 @@ public class EmailsController : ControllerBase
         _auditLogService = auditLogService;
     }
 
-    // GET: api/emails?page=1&pageSize=20&search=invoice
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] EmailQueryParameters query)
+    public async Task<IActionResult> GetEmails([FromQuery] EmailQueryParameters query)
     {
         var result = await _service.GetPagedAsync(query);
 
@@ -35,33 +35,34 @@ public class EmailsController : ControllerBase
             action: "EmailSearch",
             entityType: "Email");
 
-        var mapped = new PagedResult<EmailListResponse>
+        var response = new PagedResult<EmailListResponse>
         {
-            Items = result.Items.Select(MapToListResponse).ToList(),
+            Items = result.Items
+                .Select(email => MapToListResponse(email, query.Search))
+                .ToList(),
             TotalCount = result.TotalCount,
             Page = result.Page,
             PageSize = result.PageSize
         };
 
-        return Ok(ApiResponse<PagedResult<EmailListResponse>>.Ok(mapped));
+        return Ok(ApiResponse<PagedResult<EmailListResponse>>.Ok(response));
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetById(Guid id)
+    public async Task<IActionResult> GetEmailById(Guid id)
     {
         var result = await _service.GetByIdAsync(id);
 
         if (!result.IsSuccess)
-            return NotFound(ApiResponse<EmailDetailsResponse>.Fail(result.Error!));
+            return NotFound(ApiResponse<string>.Fail(result.Error!));
 
         await _auditLogService.LogAsync(
             action: "EmailViewed",
             entityType: "Email",
             entityId: id);
 
-        var response = MapToDetailsResponse(result.Value!);
-
-        return Ok(ApiResponse<EmailDetailsResponse>.Ok(response));
+        return Ok(ApiResponse<EmailDetailsResponse>.Ok(
+            MapToDetailsResponse(result.Value!)));
     }
 
     [HttpGet("{id:guid}/attachments")]
@@ -70,7 +71,7 @@ public class EmailsController : ControllerBase
         var result = await _service.GetAttachmentsByEmailIdAsync(id);
 
         if (!result.IsSuccess)
-            return NotFound(ApiResponse<IReadOnlyCollection<EmailAttachmentResponse>>.Fail(result.Error!));
+            return NotFound(ApiResponse<string>.Fail(result.Error!));
 
         await _auditLogService.LogAsync(
             action: "EmailAttachmentsViewed",
@@ -81,37 +82,38 @@ public class EmailsController : ControllerBase
             .Select(MapToAttachmentResponse)
             .ToList();
 
-        return Ok(ApiResponse<IReadOnlyCollection<EmailAttachmentResponse>>.Ok(response));
+        return Ok(ApiResponse<List<EmailAttachmentResponse>>.Ok(response));
     }
 
-    private static EmailListResponse MapToListResponse(Email email)
+    private static EmailListResponse MapToListResponse(
+        Email email,
+        string? search)
     {
-        var recipientEmails = email.Recipients
-            .Select(x => x.RecipientEmail)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(x => x)
-            .ToList();
-
-        var attachmentFileNames = email.Attachments
-            .Select(x => x.FileName)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(x => x)
-            .ToList();
-
         return new EmailListResponse(
             email.Id,
             email.MailboxId,
-            email.Mailbox?.DisplayName,
+            email.Mailbox.DisplayName,
             email.InternetMessageId,
-            email.FolderPath,
-            email.SenderEmail,
+            email.FolderPath ?? string.Empty,
+            email.SenderEmail ?? string.Empty,
             email.SenderName,
             email.Subject,
             email.SentAt,
             email.ReceivedAt,
             email.HasAttachments,
-            recipientEmails,
-            attachmentFileNames
+            email.Recipients
+                .Select(x => x.RecipientEmail)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x)
+                .ToList(),
+            email.Attachments
+                .Select(x => x.FileName)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x)
+                .ToList(),
+            EmailSearchSnippet.Create(email, search)
         );
     }
 
@@ -120,12 +122,12 @@ public class EmailsController : ControllerBase
         return new EmailDetailsResponse(
             email.Id,
             email.MailboxId,
-            email.Mailbox?.DisplayName,
+            email.Mailbox.DisplayName,
             email.ImportBatchId,
             email.InternetMessageId,
-            email.MessageHash,
-            email.FolderPath,
-            email.SenderEmail,
+            email.MessageHash ?? string.Empty,
+            email.FolderPath ?? string.Empty,
+            email.SenderEmail ?? string.Empty,
             email.SenderName,
             email.Subject,
             email.BodyText,
@@ -134,17 +136,31 @@ public class EmailsController : ControllerBase
             email.ReceivedAt,
             email.HasAttachments,
             email.CreatedAt,
-            email.Recipients.Select(x => new EmailRecipientResponse(
-                x.Id,
-                x.RecipientType.ToString(),
-                x.RecipientEmail,
-                x.RecipientName
-            )).ToList(),
-            email.Attachments.Select(MapToAttachmentResponse).ToList()
+            email.Recipients
+                .OrderBy(x => x.RecipientType)
+                .ThenBy(x => x.RecipientEmail)
+                .Select(MapToRecipientResponse)
+                .ToList(),
+            email.Attachments
+                .OrderBy(x => x.FileName)
+                .Select(MapToAttachmentResponse)
+                .ToList()
         );
     }
 
-    private static EmailAttachmentResponse MapToAttachmentResponse(Attachment attachment)
+    private static EmailRecipientResponse MapToRecipientResponse(
+        EmailRecipient recipient)
+    {
+        return new EmailRecipientResponse(
+            recipient.Id,
+            recipient.RecipientType.ToString(),
+            recipient.RecipientEmail,
+            recipient.RecipientName
+        );
+    }
+
+    private static EmailAttachmentResponse MapToAttachmentResponse(
+        Attachment attachment)
     {
         return new EmailAttachmentResponse(
             attachment.Id,

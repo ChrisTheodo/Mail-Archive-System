@@ -8,6 +8,8 @@ public class EmailQueryParameters
 
     public string? Search { get; set; }
 
+    public Guid? MailboxId { get; set; }
+
     public DateTime? FromDate { get; set; }
 
     public DateTime? ToDate { get; set; }
@@ -24,9 +26,7 @@ public class EmailQueryParameters
 
     public string? AttachmentFileName { get; set; }
 
-    public Guid? MailboxId { get; set; }
-
-    public string? SortBy { get; set; } = "receivedAt";
+    public string? SortBy { get; set; }
 
     public bool SortDescending { get; set; } = true;
 }

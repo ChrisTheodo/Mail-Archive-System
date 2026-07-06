@@ -1,6 +1,7 @@
 using MailArchive.Application.Abstractions;
 using MailArchive.Application.Common;
 using MailArchive.Application.Emails.Queries;
+using MailArchive.Application.Emails.Search;
 using MailArchive.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,6 +9,8 @@ namespace MailArchive.Application.Emails;
 
 public class EmailService : IEmailService
 {
+    private const int MaxPageSize = 100;
+
     private readonly IMailArchiveDbContext _db;
     private readonly ICurrentUserService _currentUser;
 
@@ -21,105 +24,28 @@ public class EmailService : IEmailService
 
     public async Task<PagedResult<Email>> GetPagedAsync(EmailQueryParameters query)
     {
-        var page = query.Page < 1 ? 1 : query.Page;
-        var pageSize = query.PageSize < 1 ? 20 : query.PageSize;
-        pageSize = pageSize > 100 ? 100 : pageSize;
+        var page = Math.Max(query.Page, 1);
+        var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
 
-        var baseQuery = _db.Emails
+        var searchTerms = EmailSearchText.ExtractTerms(query.Search);
+
+        var emailsQuery = _db.Emails
+            .AsNoTracking()
             .Include(x => x.Mailbox)
+                .ThenInclude(x => x.OwnerUser)
             .Include(x => x.Recipients)
             .Include(x => x.Attachments)
             .AsQueryable();
 
-        baseQuery = ApplyUserIsolation(baseQuery);
+        emailsQuery = ApplyUserIsolation(emailsQuery);
+        emailsQuery = ApplyFilters(emailsQuery, query);
+        emailsQuery = ApplySearch(emailsQuery, searchTerms);
 
-        if (query.MailboxId.HasValue)
-        {
-            baseQuery = baseQuery.Where(x => x.MailboxId == query.MailboxId.Value);
-        }
+        var totalCount = await emailsQuery.CountAsync();
 
-        if (!string.IsNullOrWhiteSpace(query.Search))
-        {
-            var search = query.Search.Trim().ToLowerInvariant();
+        emailsQuery = ApplySorting(emailsQuery, query, searchTerms);
 
-            baseQuery = baseQuery.Where(x =>
-                (x.Subject != null && x.Subject.ToLower().Contains(search)) ||
-                (x.BodyText != null && x.BodyText.ToLower().Contains(search)) ||
-                (x.SenderEmail != null && x.SenderEmail.ToLower().Contains(search)) ||
-                x.Recipients.Any(r => r.RecipientEmail.ToLower().Contains(search)) ||
-                x.Attachments.Any(a => a.FileName.ToLower().Contains(search)));
-        }
-
-        if (query.FromDate.HasValue)
-        {
-            baseQuery = baseQuery.Where(x =>
-                x.ReceivedAt >= query.FromDate.Value ||
-                x.SentAt >= query.FromDate.Value);
-        }
-
-        if (query.ToDate.HasValue)
-        {
-            baseQuery = baseQuery.Where(x =>
-                x.ReceivedAt <= query.ToDate.Value ||
-                x.SentAt <= query.ToDate.Value);
-        }
-
-        if (!string.IsNullOrWhiteSpace(query.Sender))
-        {
-            var sender = query.Sender.Trim().ToLowerInvariant();
-
-            baseQuery = baseQuery.Where(x =>
-                x.SenderEmail != null &&
-                x.SenderEmail.ToLower().Contains(sender));
-        }
-
-        if (!string.IsNullOrWhiteSpace(query.Recipient))
-        {
-            var recipient = query.Recipient.Trim().ToLowerInvariant();
-
-            baseQuery = baseQuery.Where(x =>
-                x.Recipients.Any(r =>
-                    r.RecipientEmail.ToLower().Contains(recipient)));
-        }
-
-        if (!string.IsNullOrWhiteSpace(query.Subject))
-        {
-            var subject = query.Subject.Trim().ToLowerInvariant();
-
-            baseQuery = baseQuery.Where(x =>
-                x.Subject != null &&
-                x.Subject.ToLower().Contains(subject));
-        }
-
-        if (!string.IsNullOrWhiteSpace(query.Folder))
-        {
-            var folder = query.Folder.Trim().ToLowerInvariant();
-
-            baseQuery = baseQuery.Where(x =>
-                x.FolderPath != null &&
-                x.FolderPath.ToLower().Contains(folder));
-        }
-
-        if (query.HasAttachments.HasValue)
-        {
-            baseQuery = baseQuery.Where(x =>
-                x.HasAttachments == query.HasAttachments.Value);
-        }
-
-        if (!string.IsNullOrWhiteSpace(query.AttachmentFileName))
-        {
-            var fileName = query.AttachmentFileName.Trim().ToLowerInvariant();
-
-            baseQuery = baseQuery.Where(x =>
-                x.Attachments.Any(a =>
-                    a.FileName.ToLower().Contains(fileName)));
-        }
-
-        var total = await baseQuery.CountAsync();
-
-        var orderedQuery = ApplySorting(baseQuery, query.SortBy, query.SortDescending);
-
-        var items = await orderedQuery
+        var items = await emailsQuery
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
@@ -127,7 +53,7 @@ public class EmailService : IEmailService
         return new PagedResult<Email>
         {
             Items = items,
-            TotalCount = total,
+            TotalCount = totalCount,
             Page = page,
             PageSize = pageSize
         };
@@ -136,11 +62,12 @@ public class EmailService : IEmailService
     public async Task<Result<Email>> GetByIdAsync(Guid id)
     {
         var query = _db.Emails
+            .AsNoTracking()
             .Include(x => x.Mailbox)
+                .ThenInclude(x => x.OwnerUser)
             .Include(x => x.Recipients)
             .Include(x => x.Attachments)
-            .Where(x => x.Id == id)
-            .AsQueryable();
+            .Where(x => x.Id == id);
 
         query = ApplyUserIsolation(query);
 
@@ -155,9 +82,10 @@ public class EmailService : IEmailService
     public async Task<Result<List<Attachment>>> GetAttachmentsByEmailIdAsync(Guid emailId)
     {
         var emailQuery = _db.Emails
+            .AsNoTracking()
             .Include(x => x.Mailbox)
-            .Where(x => x.Id == emailId)
-            .AsQueryable();
+                .ThenInclude(x => x.OwnerUser)
+            .Where(x => x.Id == emailId);
 
         emailQuery = ApplyUserIsolation(emailQuery);
 
@@ -167,6 +95,7 @@ public class EmailService : IEmailService
             return Result<List<Attachment>>.Failure("EmailNotFound");
 
         var attachments = await _db.Attachments
+            .AsNoTracking()
             .Where(x => x.EmailId == emailId)
             .OrderBy(x => x.FileName)
             .ToListAsync();
@@ -179,42 +108,159 @@ public class EmailService : IEmailService
         if (_currentUser.IsAdmin)
             return query;
 
-        var currentUserId = _currentUser.UserId;
-
-        if (!currentUserId.HasValue)
+        if (!_currentUser.UserId.HasValue)
             return query.Where(x => false);
 
-        return query.Where(x => x.Mailbox.OwnerUserId == currentUserId.Value);
+        return query.Where(x => x.Mailbox.OwnerUserId == _currentUser.UserId.Value);
+    }
+
+    private static IQueryable<Email> ApplyFilters(
+        IQueryable<Email> query,
+        EmailQueryParameters parameters)
+    {
+        if (parameters.MailboxId.HasValue)
+        {
+            query = query.Where(x => x.MailboxId == parameters.MailboxId.Value);
+        }
+
+        if (parameters.FromDate.HasValue)
+        {
+            query = query.Where(x =>
+                (x.ReceivedAt ?? x.SentAt ?? x.CreatedAt) >= parameters.FromDate.Value);
+        }
+
+        if (parameters.ToDate.HasValue)
+        {
+            query = query.Where(x =>
+                (x.ReceivedAt ?? x.SentAt ?? x.CreatedAt) <= parameters.ToDate.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(parameters.Sender))
+        {
+            var pattern = EmailSearchText.ToContainsPattern(parameters.Sender);
+
+            query = query.Where(x =>
+                EF.Functions.ILike(x.SenderEmail ?? string.Empty, pattern) ||
+                EF.Functions.ILike(x.SenderName ?? string.Empty, pattern));
+        }
+
+        if (!string.IsNullOrWhiteSpace(parameters.Recipient))
+        {
+            var pattern = EmailSearchText.ToContainsPattern(parameters.Recipient);
+
+            query = query.Where(x =>
+                x.Recipients.Any(r =>
+                    EF.Functions.ILike(r.RecipientEmail ?? string.Empty, pattern) ||
+                    EF.Functions.ILike(r.RecipientName ?? string.Empty, pattern)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(parameters.Subject))
+        {
+            var pattern = EmailSearchText.ToContainsPattern(parameters.Subject);
+
+            query = query.Where(x =>
+                EF.Functions.ILike(x.Subject ?? string.Empty, pattern));
+        }
+
+        if (!string.IsNullOrWhiteSpace(parameters.Folder))
+        {
+            var pattern = EmailSearchText.ToContainsPattern(parameters.Folder);
+
+            query = query.Where(x =>
+                EF.Functions.ILike(x.FolderPath ?? string.Empty, pattern));
+        }
+
+        if (parameters.HasAttachments.HasValue)
+        {
+            query = query.Where(x => x.HasAttachments == parameters.HasAttachments.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(parameters.AttachmentFileName))
+        {
+            var pattern = EmailSearchText.ToContainsPattern(parameters.AttachmentFileName);
+
+            query = query.Where(x =>
+                x.Attachments.Any(a =>
+                    EF.Functions.ILike(a.FileName ?? string.Empty, pattern)));
+        }
+
+        return query;
+    }
+
+    private static IQueryable<Email> ApplySearch(
+        IQueryable<Email> query,
+        IReadOnlyCollection<string> searchTerms)
+    {
+        foreach (var term in searchTerms)
+        {
+            var pattern = EmailSearchText.ToContainsPattern(term);
+
+            query = query.Where(x =>
+                EF.Functions.ILike(x.Subject ?? string.Empty, pattern) ||
+                EF.Functions.ILike(x.BodyText ?? string.Empty, pattern) ||
+                EF.Functions.ILike(x.BodyHtml ?? string.Empty, pattern) ||
+                EF.Functions.ILike(x.SenderEmail ?? string.Empty, pattern) ||
+                EF.Functions.ILike(x.SenderName ?? string.Empty, pattern) ||
+                EF.Functions.ILike(x.InternetMessageId ?? string.Empty, pattern) ||
+                EF.Functions.ILike(x.FolderPath ?? string.Empty, pattern) ||
+                x.Recipients.Any(r =>
+                    EF.Functions.ILike(r.RecipientEmail ?? string.Empty, pattern) ||
+                    EF.Functions.ILike(r.RecipientName ?? string.Empty, pattern)) ||
+                x.Attachments.Any(a =>
+                    EF.Functions.ILike(a.FileName ?? string.Empty, pattern)));
+        }
+
+        return query;
     }
 
     private static IQueryable<Email> ApplySorting(
         IQueryable<Email> query,
-        string? sortBy,
-        bool sortDescending)
+        EmailQueryParameters parameters,
+        IReadOnlyCollection<string> searchTerms)
     {
-        var normalizedSortBy = sortBy?.Trim().ToLowerInvariant();
+        var sortBy = parameters.SortBy?.Trim().ToLowerInvariant();
+        var sortDescending = parameters.SortDescending;
 
-        return normalizedSortBy switch
+        if (string.IsNullOrWhiteSpace(sortBy) && searchTerms.Count > 0)
+        {
+            var firstTerm = searchTerms.First();
+            var pattern = EmailSearchText.ToContainsPattern(firstTerm);
+
+            return query
+                .OrderByDescending(x => EF.Functions.ILike(x.Subject ?? string.Empty, pattern))
+                .ThenByDescending(x => EF.Functions.ILike(x.SenderEmail ?? string.Empty, pattern))
+                .ThenByDescending(x => x.ReceivedAt ?? x.SentAt ?? x.CreatedAt);
+        }
+
+        return sortBy switch
         {
             "subject" => sortDescending
                 ? query.OrderByDescending(x => x.Subject)
-                : query.OrderBy(x => x.Subject),
+                    .ThenByDescending(x => x.ReceivedAt ?? x.SentAt ?? x.CreatedAt)
+                : query.OrderBy(x => x.Subject)
+                    .ThenByDescending(x => x.ReceivedAt ?? x.SentAt ?? x.CreatedAt),
 
-            "sender" => sortDescending
+            "sender" or "senderemail" => sortDescending
                 ? query.OrderByDescending(x => x.SenderEmail)
-                : query.OrderBy(x => x.SenderEmail),
+                    .ThenByDescending(x => x.ReceivedAt ?? x.SentAt ?? x.CreatedAt)
+                : query.OrderBy(x => x.SenderEmail)
+                    .ThenByDescending(x => x.ReceivedAt ?? x.SentAt ?? x.CreatedAt),
 
-            "sentat" => sortDescending
+            "sentat" or "sent" => sortDescending
                 ? query.OrderByDescending(x => x.SentAt)
-                : query.OrderBy(x => x.SentAt),
+                    .ThenByDescending(x => x.CreatedAt)
+                : query.OrderBy(x => x.SentAt)
+                    .ThenByDescending(x => x.CreatedAt),
 
-            "createdat" => sortDescending
+            "createdat" or "created" => sortDescending
                 ? query.OrderByDescending(x => x.CreatedAt)
                 : query.OrderBy(x => x.CreatedAt),
 
-            _ => sortDescending
-                ? query.OrderByDescending(x => x.ReceivedAt)
-                : query.OrderBy(x => x.ReceivedAt)
+            "receivedat" or "received" or _ => sortDescending
+                ? query.OrderByDescending(x => x.ReceivedAt ?? x.SentAt ?? x.CreatedAt)
+                    .ThenByDescending(x => x.CreatedAt)
+                : query.OrderBy(x => x.ReceivedAt ?? x.SentAt ?? x.CreatedAt)
+                    .ThenByDescending(x => x.CreatedAt)
         };
     }
 }

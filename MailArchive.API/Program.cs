@@ -1,4 +1,5 @@
 using System.Text;
+using MailArchive.API.Background;
 using MailArchive.API.Middleware;
 using MailArchive.API.Security;
 using MailArchive.API.Storage;
@@ -115,6 +116,8 @@ builder.Services.AddSwaggerGen(options =>
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
+builder.Services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
+builder.Services.AddHostedService<QueuedHostedService>();
 
 var app = builder.Build();
 

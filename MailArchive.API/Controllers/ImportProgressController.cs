@@ -89,8 +89,11 @@ public class ImportProgressController : ControllerBase
             return 100;
         }
 
-        if (status == ImportBatchStatus.Pending)
+        if (status == ImportBatchStatus.Pending ||
+            status == ImportBatchStatus.Queued)
+        {
             return 0;
+        }
 
         if (totalMessages <= 0)
             return 0;

@@ -41,6 +41,9 @@ public class ImportBackgroundProcessingController : ControllerBase
         if (importBatch == null)
             return NotFound(ApiResponse<string>.Fail("ImportBatchNotFound"));
 
+        if (importBatch.Status == ImportBatchStatus.Queued)
+            return BadRequest(ApiResponse<string>.Fail("ImportBatchAlreadyQueued"));
+
         if (importBatch.Status == ImportBatchStatus.Running)
             return BadRequest(ApiResponse<string>.Fail("ImportBatchAlreadyRunning"));
 
@@ -58,7 +61,7 @@ public class ImportBackgroundProcessingController : ControllerBase
 
         var queuedByUserId = _currentUser.UserId;
 
-        importBatch.Status = ImportBatchStatus.Running;
+        importBatch.Status = ImportBatchStatus.Queued;
         importBatch.StartedAt = DateTime.UtcNow;
         importBatch.CompletedAt = null;
 
@@ -82,6 +85,18 @@ public class ImportBackgroundProcessingController : ControllerBase
 
                 if (result.IsSuccess &&
                     result.Value?.Status == ImportBatchStatus.Cancelled)
+                {
+                    await auditLogService.LogAsync(
+                        action: "ImportBackgroundCancelled",
+                        entityType: "ImportBatch",
+                        entityId: id,
+                        userIdOverride: queuedByUserId);
+
+                    return;
+                }
+
+                if (!result.IsSuccess &&
+                    result.Error == "ImportBatchAlreadyCancelled")
                 {
                     await auditLogService.LogAsync(
                         action: "ImportBackgroundCancelled",
@@ -124,7 +139,7 @@ public class ImportBackgroundProcessingController : ControllerBase
         var response = new
         {
             importBatchId = id,
-            status = "Queued"
+            status = importBatch.Status.ToString()
         };
 
         return Accepted(ApiResponse<object>.Ok(response));

@@ -7,5 +7,6 @@ public enum ImportBatchStatus
     Completed = 3,
     Failed = 4,
     CompletedWithErrors = 5,
-    Cancelled = 6
+    Cancelled = 6,
+    Queued = 7
 }

@@ -44,7 +44,17 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAttachmentService, AttachmentService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 
-builder.Services.AddScoped<IPstParser, MockPstParser>();
+var pstParserProvider = builder.Configuration["MailArchive:PstParserProvider"];
+
+if (string.Equals(pstParserProvider, "XstReader", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddScoped<IPstParser, XstReaderPstParser>();
+}
+else
+{
+    builder.Services.AddScoped<IPstParser, MockPstParser>();
+}
+
 builder.Services.AddScoped<IPstImportProcessor, PstImportProcessor>();
 builder.Services.AddScoped<IImportService, ImportService>();
 

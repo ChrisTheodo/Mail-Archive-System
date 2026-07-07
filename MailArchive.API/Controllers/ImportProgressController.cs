@@ -71,7 +71,8 @@ public class ImportProgressController : ControllerBase
     {
         return status == ImportBatchStatus.Completed ||
                status == ImportBatchStatus.CompletedWithErrors ||
-               status == ImportBatchStatus.Failed;
+               status == ImportBatchStatus.Failed ||
+               status == ImportBatchStatus.Cancelled;
     }
 
     private static int CalculateProgressPercent(
@@ -82,7 +83,8 @@ public class ImportProgressController : ControllerBase
     {
         if (status == ImportBatchStatus.Completed ||
             status == ImportBatchStatus.CompletedWithErrors ||
-            status == ImportBatchStatus.Failed)
+            status == ImportBatchStatus.Failed ||
+            status == ImportBatchStatus.Cancelled)
         {
             return 100;
         }

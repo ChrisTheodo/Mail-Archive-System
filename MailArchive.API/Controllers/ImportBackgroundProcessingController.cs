@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-
 namespace MailArchive.API.Controllers;
 
 [ApiController]
@@ -19,15 +18,18 @@ public class ImportBackgroundProcessingController : ControllerBase
     private readonly IMailArchiveDbContext _db;
     private readonly IBackgroundTaskQueue _taskQueue;
     private readonly IAuditLogService _auditLogService;
+    private readonly ICurrentUserService _currentUser;
 
     public ImportBackgroundProcessingController(
         IMailArchiveDbContext db,
         IBackgroundTaskQueue taskQueue,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        ICurrentUserService currentUser)
     {
         _db = db;
         _taskQueue = taskQueue;
         _auditLogService = auditLogService;
+        _currentUser = currentUser;
     }
 
     [HttpPost("{id:guid}/process/background")]
@@ -51,6 +53,8 @@ public class ImportBackgroundProcessingController : ControllerBase
         if (importBatch.Status == ImportBatchStatus.Failed)
             return BadRequest(ApiResponse<string>.Fail("ImportBatchAlreadyFailed"));
 
+        var queuedByUserId = _currentUser.UserId;
+
         importBatch.Status = ImportBatchStatus.Running;
         importBatch.StartedAt = DateTime.UtcNow;
         importBatch.CompletedAt = null;
@@ -67,8 +71,39 @@ public class ImportBackgroundProcessingController : ControllerBase
             using var scope = services.CreateScope();
 
             var processor = scope.ServiceProvider.GetRequiredService<IPstImportProcessor>();
+            var auditLogService = scope.ServiceProvider.GetRequiredService<IAuditLogService>();
 
-            await processor.ProcessAsync(id);
+            try
+            {
+                var result = await processor.ProcessAsync(id);
+
+                if (result.IsSuccess)
+                {
+                    await auditLogService.LogAsync(
+                        action: "ImportBackgroundCompleted",
+                        entityType: "ImportBatch",
+                        entityId: id,
+                        userIdOverride: queuedByUserId);
+                }
+                else
+                {
+                    await auditLogService.LogAsync(
+                        action: "ImportBackgroundFailed",
+                        entityType: "ImportBatch",
+                        entityId: id,
+                        userIdOverride: queuedByUserId);
+                }
+            }
+            catch
+            {
+                await auditLogService.LogAsync(
+                    action: "ImportBackgroundFailed",
+                    entityType: "ImportBatch",
+                    entityId: id,
+                    userIdOverride: queuedByUserId);
+
+                throw;
+            }
         });
 
         var response = new

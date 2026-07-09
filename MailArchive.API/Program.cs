@@ -44,15 +44,20 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAttachmentService, AttachmentService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 
-var pstParserProvider = builder.Configuration["MailArchive:PstParserProvider"];
+var pstParserProvider = builder.Configuration["MailArchive:PstParserProvider"] ?? "XstReader";
 
 if (string.Equals(pstParserProvider, "XstReader", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddScoped<IPstParser, XstReaderPstParser>();
 }
-else
+else if (string.Equals(pstParserProvider, "Mock", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddScoped<IPstParser, MockPstParser>();
+}
+else
+{
+    throw new InvalidOperationException(
+        $"Unsupported PST parser provider '{pstParserProvider}'. Valid values are: XstReader, Mock.");
 }
 
 builder.Services.AddScoped<IPstImportProcessor, PstImportProcessor>();

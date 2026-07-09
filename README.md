@@ -6,7 +6,7 @@ Backend σύστημα για διαχείριση mailboxes με υποστήρ
 
 ---
 
-## Τρέχουσα κατάσταση
+## Τρέχουσα κατάσταση !!!!!!!!!! OUTDATED
 
 Το project αυτή τη στιγμή περιλαμβάνει:
 
@@ -18,7 +18,7 @@ Backend σύστημα για διαχείριση mailboxes με υποστήρ
 
 ---
 
-## Τεχνολογίες
+## Τεχνολογίες OUTDATED
 
 - ASP.NET Core Web API
 - Entity Framework Core
@@ -43,54 +43,6 @@ dotnet run --project MailArchive.API
 
 
 
-### Τρόπος δοκιμής
-
-Users
-GET:
-/api/users
-
-GET by id:
-/api/users/{id}
-
-POST:
-/api/users
-
-Mailboxes
-
-GET (pagination):
-/api/mailboxes?page=1&pageSize=10
-
-GET (search):
-/api/mailboxes?page=1&pageSize=10&search=Main
-
-GET by id:
-/api/mailboxes/{id}
-
-POST:
-/api/mailboxes
-
-PUT:
-/api/mailboxes/{id}
-
-
-### Response format
-
-Όλα τα endpoints επιστρέφουν ενιαίο format:
-
-{
-  "data": {},
-  "isSuccess": true,
-  "error": null
-}
-
-Για pagination:
-
-{
-  "data": {
-    "items": [],
-    "totalCount": 0,
-    "page": 1,
-    "pageSize": 10
   },
   "isSuccess": true,
   "error": null

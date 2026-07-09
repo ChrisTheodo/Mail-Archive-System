@@ -20,7 +20,9 @@ public class XstReaderPstParser : IPstParser
 
         if (!File.Exists(pstFilePath))
             throw new FileNotFoundException("PST file was not found.", pstFilePath);
-
+        
+        ValidatePstHeader(pstFilePath);
+        
         cancellationToken.ThrowIfCancellationRequested();
 
         try
@@ -1016,5 +1018,33 @@ private static void AppendUnicodeCharacter(StringBuilder output, string paramete
     {
         // Ignore invalid unicode escape.
     }
+}
+private static void ValidatePstHeader(string pstFilePath)
+{
+    const int headerLength = 4;
+
+    var fileInfo = new FileInfo(pstFilePath);
+
+    if (fileInfo.Length < headerLength)
+        throw new InvalidDataException("InvalidPstFile: file is too small to be a valid PST/OST file.");
+
+    var header = new byte[headerLength];
+
+    using var stream = File.OpenRead(pstFilePath);
+
+    var bytesRead = stream.Read(header, 0, header.Length);
+
+    if (bytesRead < headerLength)
+        throw new InvalidDataException("InvalidPstFile: could not read PST/OST file header.");
+
+    // PST/OST files start with the magic bytes: 21 42 44 4E, which is "!BDN".
+    var hasXstMagicHeader =
+        header[0] == 0x21 &&
+        header[1] == 0x42 &&
+        header[2] == 0x44 &&
+        header[3] == 0x4E;
+
+    if (!hasXstMagicHeader)
+        throw new InvalidDataException("InvalidPstFile: missing PST/OST magic header.");
 }
 }

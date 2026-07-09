@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using MailArchive.Domain.Enums;
 using XstReader;
+using System.Text;
 
 namespace MailArchive.Application.Imports.Parsing;
 
@@ -164,14 +165,18 @@ public class XstReaderPstParser : IPstParser
             GetString(bodyObject, "Format") ??
             GetString(message, "BodyFormat");
 
+        var cleanedBodyTextRaw = IsRtfBody(bodyTextRaw)
+            ? ConvertRtfToPlainText(bodyTextRaw)
+            : bodyTextRaw;
+
         var bodyHtml = !string.IsNullOrWhiteSpace(bodyHtmlRaw)
             ? bodyHtmlRaw
-            : IsHtmlBody(bodyFormat, bodyTextRaw)
-                ? bodyTextRaw
+            : IsHtmlBody(bodyFormat, cleanedBodyTextRaw)
+                ? cleanedBodyTextRaw
                 : null;
 
         var bodyText = bodyHtml == null
-            ? NormalizeWhitespace(bodyTextRaw)
+            ? NormalizeWhitespace(cleanedBodyTextRaw)
             : NormalizeWhitespace(StripHtml(bodyHtml));
 
         var recipients = MapRecipients(recipientsObject);
@@ -748,4 +753,268 @@ public class XstReaderPstParser : IPstParser
             // Ignore temp cleanup errors.
         }
     }
+    
+    private static bool IsRtfBody(string? body)
+{
+    if (string.IsNullOrWhiteSpace(body))
+        return false;
+
+    return body.TrimStart().StartsWith(@"{\rtf", StringComparison.OrdinalIgnoreCase);
+}
+
+private static string ConvertRtfToPlainText(string rtf)
+{
+    if (string.IsNullOrWhiteSpace(rtf))
+        return string.Empty;
+
+    var output = new StringBuilder();
+    var ignoreStack = new Stack<bool>();
+
+    var ignoreCurrentGroup = false;
+
+    for (var i = 0; i < rtf.Length; i++)
+    {
+        var character = rtf[i];
+
+        if (character == '{')
+        {
+            ignoreStack.Push(ignoreCurrentGroup);
+            continue;
+        }
+
+        if (character == '}')
+        {
+            ignoreCurrentGroup = ignoreStack.Count > 0 && ignoreStack.Pop();
+            continue;
+        }
+
+        if (character != '\\')
+        {
+            if (!ignoreCurrentGroup)
+                output.Append(character);
+
+            continue;
+        }
+
+        if (i + 1 >= rtf.Length)
+            continue;
+
+        var next = rtf[i + 1];
+
+        if (next is '\\' or '{' or '}')
+        {
+            if (!ignoreCurrentGroup)
+                output.Append(next);
+
+            i++;
+            continue;
+        }
+
+        if (next == '*')
+        {
+            ignoreCurrentGroup = true;
+            i++;
+            continue;
+        }
+
+        if (next == '~')
+        {
+            if (!ignoreCurrentGroup)
+                output.Append(' ');
+
+            i++;
+            continue;
+        }
+
+        if (next == '-')
+        {
+            if (!ignoreCurrentGroup)
+                output.Append('-');
+
+            i++;
+            continue;
+        }
+
+        if (next == '_')
+        {
+            if (!ignoreCurrentGroup)
+                output.Append('-');
+
+            i++;
+            continue;
+        }
+
+        if (next == '\'')
+        {
+            if (i + 3 < rtf.Length)
+            {
+                var hex = rtf.Substring(i + 2, 2);
+
+                if (byte.TryParse(
+                        hex,
+                        System.Globalization.NumberStyles.HexNumber,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out var value) &&
+                    !ignoreCurrentGroup)
+                {
+                    output.Append((char)value);
+                }
+
+                i += 3;
+            }
+
+            continue;
+        }
+
+        if (!char.IsLetter(next))
+        {
+            i++;
+            continue;
+        }
+
+        var controlStart = i + 1;
+        var cursor = controlStart;
+
+        while (cursor < rtf.Length && char.IsLetter(rtf[cursor]))
+            cursor++;
+
+        var controlWord = rtf[controlStart..cursor].ToLowerInvariant();
+
+        var parameterStart = cursor;
+
+        if (cursor < rtf.Length && (rtf[cursor] == '-' || rtf[cursor] == '+'))
+            cursor++;
+
+        while (cursor < rtf.Length && char.IsDigit(rtf[cursor]))
+            cursor++;
+
+        var parameter = rtf[parameterStart..cursor];
+
+        if (cursor < rtf.Length && rtf[cursor] == ' ')
+        {
+            // RTF control-word delimiter space.
+        }
+        else
+        {
+            cursor--;
+        }
+
+        HandleRtfControlWord(
+            output,
+            controlWord,
+            parameter,
+            ref ignoreCurrentGroup);
+
+        i = cursor;
+    }
+
+    var text = output.ToString();
+
+    text = Regex.Replace(text, @"\r\n|\r|\n", "\n");
+    text = Regex.Replace(text, @"[ \t]+", " ");
+    text = Regex.Replace(text, @"\n\s+", "\n");
+    text = Regex.Replace(text, @"(\n\s*){3,}", "\n\n");
+
+    return NormalizeWhitespace(text);
+}
+
+private static void HandleRtfControlWord(
+    StringBuilder output,
+    string controlWord,
+    string parameter,
+    ref bool ignoreCurrentGroup)
+{
+    if (IsIgnoredRtfDestination(controlWord))
+    {
+        ignoreCurrentGroup = true;
+        return;
+    }
+
+    if (ignoreCurrentGroup)
+        return;
+
+    switch (controlWord)
+    {
+        case "par":
+        case "line":
+            output.AppendLine();
+            return;
+
+        case "tab":
+            output.Append('\t');
+            return;
+
+        case "emdash":
+            output.Append('—');
+            return;
+
+        case "endash":
+            output.Append('–');
+            return;
+
+        case "bullet":
+            output.Append('•');
+            return;
+
+        case "lquote":
+            output.Append('‘');
+            return;
+
+        case "rquote":
+            output.Append('’');
+            return;
+
+        case "ldblquote":
+            output.Append('“');
+            return;
+
+        case "rdblquote":
+            output.Append('”');
+            return;
+
+        case "u":
+            AppendUnicodeCharacter(output, parameter);
+            return;
+    }
+}
+
+private static bool IsIgnoredRtfDestination(string controlWord)
+{
+    return controlWord is
+        "fonttbl" or
+        "colortbl" or
+        "stylesheet" or
+        "info" or
+        "pict" or
+        "object" or
+        "generator" or
+        "xmlnstbl" or
+        "datastore" or
+        "themedata" or
+        "colorschememapping";
+}
+
+private static void AppendUnicodeCharacter(StringBuilder output, string parameter)
+{
+    if (!int.TryParse(
+            parameter,
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var value))
+    {
+        return;
+    }
+
+    if (value < 0)
+        value += 65536;
+
+    try
+    {
+        output.Append(char.ConvertFromUtf32(value));
+    }
+    catch
+    {
+        // Ignore invalid unicode escape.
+    }
+}
 }
